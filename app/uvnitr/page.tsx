@@ -108,7 +108,7 @@ export default function UvnitrPage() {
       <div className="relative z-10 flex-1 flex flex-col items-center justify-center px-6 py-8">
 
         {/* Announcement */}
-        <p style={{ fontFamily: "Cinzel, serif", fontSize: "10px", letterSpacing: "3px", color: "rgba(201,168,76,0.6)", textAlign: "center", marginBottom: "16px" }}>
+        <p style={{ fontFamily: "Cinzel, serif", fontSize: "13px", letterSpacing: "2px", color: "rgba(201,168,76,0.85)", textAlign: "center", marginBottom: "20px" }}>
           Filozofové se střídají každý týden
         </p>
 
