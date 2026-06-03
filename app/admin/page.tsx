@@ -64,6 +64,35 @@ const S = {
   },
 };
 
+// Sdílený typ a ikonky — používá PublishModal i SocialNetworksSection
+type SocialAccount = {
+  id: string;
+  platform: string;
+  account_name: string | null;
+  zernio_account_id: string;
+  is_active: boolean;
+  created_at: string;
+};
+
+const PLATFORMS = [
+  { value: "instagram", label: "Instagram" },
+  { value: "tiktok", label: "TikTok" },
+  { value: "facebook", label: "Facebook" },
+  { value: "youtube", label: "YouTube" },
+  { value: "twitter", label: "X (Twitter)" },
+  { value: "bluesky", label: "Bluesky" },
+  { value: "linkedin", label: "LinkedIn" },
+  { value: "pinterest", label: "Pinterest" },
+  { value: "threads", label: "Threads" },
+];
+
+const PLATFORM_ICON: Record<string, string> = {
+  instagram: "📷", tiktok: "🎵", facebook: "f", youtube: "▶",
+  twitter: "𝕏", bluesky: "🦋", linkedin: "in", pinterest: "𝗣", threads: "⊕",
+};
+
+// ─── Pomocné komponenty ────────────────────────────────────────────────────────
+
 function SelectField({ label, value, onChange, options }: {
   label: string;
   value: string;
@@ -95,10 +124,13 @@ function TextField({ label, value, onChange, placeholder, type = "text" }: {
   );
 }
 
-function InstagramPreview({ quote, philosopher }: { quote: string; philosopher: string }) {
+function InstagramPreview({ quote, philosopher, previewId }: { quote: string; philosopher: string; previewId?: string }) {
   return (
     <div style={{ maxWidth: "360px", width: "100%" }}>
-      <div style={{ width: "100%", aspectRatio: "1/1", background: "linear-gradient(145deg, #0a0a1a 0%, #12081e 40%, #0d0a15 100%)", border: "1px solid rgba(201,168,76,0.2)", borderRadius: "8px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "40px", position: "relative", boxShadow: "0 0 40px rgba(0,0,0,0.5)" }}>
+      <div
+        id={previewId}
+        style={{ width: "100%", aspectRatio: "1/1", background: "linear-gradient(145deg, #0a0a1a 0%, #12081e 40%, #0d0a15 100%)", border: "1px solid rgba(201,168,76,0.2)", borderRadius: "8px", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "40px", position: "relative", boxShadow: "0 0 40px rgba(0,0,0,0.5)" }}
+      >
         <div style={{ position: "absolute", top: "16px", left: "16px", width: "20px", height: "20px", borderTop: "1px solid rgba(201,168,76,0.3)", borderLeft: "1px solid rgba(201,168,76,0.3)" }} />
         <div style={{ position: "absolute", top: "16px", right: "16px", width: "20px", height: "20px", borderTop: "1px solid rgba(201,168,76,0.3)", borderRight: "1px solid rgba(201,168,76,0.3)" }} />
         <div style={{ position: "absolute", bottom: "56px", left: "16px", width: "20px", height: "20px", borderBottom: "1px solid rgba(201,168,76,0.3)", borderLeft: "1px solid rgba(201,168,76,0.3)" }} />
@@ -116,6 +148,165 @@ function InstagramPreview({ quote, philosopher }: { quote: string; philosopher: 
   );
 }
 
+// ─── Publikační modal ──────────────────────────────────────────────────────────
+
+function PublishModal({ quote, philosopher, onClose }: { quote: string; philosopher: string; onClose: () => void }) {
+  const [accounts, setAccounts] = useState<SocialAccount[]>([]);
+  const [loadingAccounts, setLoadingAccounts] = useState(true);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [caption, setCaption] = useState(`${quote}\n\n— ${philosopher}\n\n#stoicismus #klidvchaosu #epiktetos`);
+  const [publishing, setPublishing] = useState(false);
+  const [result, setResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  useEffect(() => {
+    supabase.from("social_accounts").select("*").eq("is_active", true)
+      .then(({ data }) => {
+        const list = (data as SocialAccount[]) || [];
+        setAccounts(list);
+        setSelectedIds(new Set(list.map(a => a.zernio_account_id)));
+        setLoadingAccounts(false);
+      });
+  }, []);
+
+  const toggleAccount = (zernioId: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(zernioId)) next.delete(zernioId); else next.add(zernioId);
+      return next;
+    });
+  };
+
+  const handlePublish = async () => {
+    if (selectedIds.size === 0) return;
+    setPublishing(true);
+    try {
+      const el = document.getElementById("quote-preview");
+      if (!el) throw new Error("Náhled nenalezen — zkus znovu.");
+      const { default: html2canvas } = await import("html2canvas");
+      const scale = 1080 / el.offsetWidth;
+      const canvas = await html2canvas(el, { scale, useCORS: true, backgroundColor: null });
+      const imageBase64 = canvas.toDataURL("image/png").split(",")[1];
+
+      const res = await fetch("/api/publish-quote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageBase64, caption, accountIds: [...selectedIds] }),
+        credentials: "include",
+      });
+      const data = await res.json();
+      if (!res.ok && res.status !== 207) throw new Error(data.error || "Publikace selhala.");
+      const okCount = (data.results as { ok: boolean }[]).filter(r => r.ok).length;
+      const total = selectedIds.size;
+      setResult({
+        success: data.success,
+        message: data.success
+          ? `Publikováno na ${okCount} ${okCount === 1 ? "síť" : okCount < 5 ? "sítě" : "sítí"}.`
+          : `${okCount} z ${total} ${total === 1 ? "sítě" : "sítí"} úspěšně. ${data.error ?? ""}`,
+      });
+    } catch (err) {
+      setResult({ success: false, message: err instanceof Error ? err.message : "Chyba při publikaci." });
+    }
+    setPublishing(false);
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.78)", backdropFilter: "blur(6px)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: "24px" }}>
+      <div style={{ background: "#13151c", border: "1px solid rgba(201,168,76,0.3)", borderRadius: "16px", padding: "32px", maxWidth: "520px", width: "100%", maxHeight: "90vh", overflowY: "auto" }}>
+        {/* Hlavička */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
+          <div style={{ fontFamily: "Cinzel, serif", color: "#c9a84c", fontSize: "15px", letterSpacing: "0.12em" }}>PUBLIKOVAT PŘÍSPĚVEK</div>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.35)", cursor: "pointer", fontSize: "22px", lineHeight: 1, padding: "2px 6px" }}>×</button>
+        </div>
+
+        {/* Výběr sítí */}
+        <div style={{ marginBottom: "20px" }}>
+          <div style={S.label}>Vybrat sítě</div>
+          {loadingAccounts ? (
+            <p style={{ color: "rgba(255,255,255,0.3)", fontSize: "13px", fontFamily: "'DM Sans', sans-serif" }}>Načítám účty...</p>
+          ) : accounts.length === 0 ? (
+            <p style={{ color: "rgba(255,100,100,0.6)", fontSize: "13px", fontFamily: "'DM Sans', sans-serif" }}>Žádné připojené účty. Nejprve připoj sítě v sekci „Připojené sítě".</p>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+              {accounts.map(acct => {
+                const selected = selectedIds.has(acct.zernio_account_id);
+                return (
+                  <label
+                    key={acct.id}
+                    style={{ display: "flex", alignItems: "center", gap: "12px", cursor: "pointer", padding: "10px 14px", background: selected ? "rgba(201,168,76,0.07)" : "#0f1117", border: `1px solid ${selected ? "rgba(201,168,76,0.3)" : "rgba(255,255,255,0.06)"}`, borderRadius: "8px", transition: "all 0.15s" }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selected}
+                      onChange={() => toggleAccount(acct.zernio_account_id)}
+                      style={{ width: "16px", height: "16px", accentColor: "#c9a84c", cursor: "pointer", flexShrink: 0 }}
+                    />
+                    <span style={{ fontSize: "18px", width: "22px", textAlign: "center" as const }}>{PLATFORM_ICON[acct.platform] ?? "⬡"}</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontFamily: "Cinzel, serif", color: selected ? "#c9a84c" : "rgba(255,255,255,0.45)", fontSize: "12px", letterSpacing: "0.05em" }}>
+                        {acct.platform.charAt(0).toUpperCase() + acct.platform.slice(1)}
+                      </div>
+                      <div style={{ fontFamily: "'DM Sans', sans-serif", color: "rgba(255,255,255,0.3)", fontSize: "11px" }}>
+                        @{acct.account_name ?? acct.zernio_account_id}
+                      </div>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Caption */}
+        <div style={{ marginBottom: "24px" }}>
+          <div style={S.label}>Caption</div>
+          <textarea
+            value={caption}
+            onChange={e => setCaption(e.target.value)}
+            rows={6}
+            style={{ ...S.input, resize: "vertical" as const, cursor: "text", appearance: "auto" as const, lineHeight: 1.6 }}
+          />
+        </div>
+
+        {/* Výsledek */}
+        {result && (
+          <div style={{ marginBottom: "16px", padding: "12px 16px", borderRadius: "8px", background: result.success ? "rgba(0,255,136,0.07)" : "rgba(255,100,100,0.07)", border: `1px solid ${result.success ? "rgba(0,255,136,0.2)" : "rgba(255,100,100,0.2)"}` }}>
+            <p style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "13px", color: result.success ? "#00FF88" : "#ff6b6b", margin: 0 }}>
+              {result.success ? "✓ " : "✗ "}{result.message}
+            </p>
+          </div>
+        )}
+
+        {/* Tlačítka */}
+        <div style={{ display: "flex", gap: "10px" }}>
+          <button
+            onClick={handlePublish}
+            disabled={publishing || selectedIds.size === 0 || result?.success === true}
+            style={{
+              flex: 1,
+              background: (publishing || selectedIds.size === 0 || result?.success) ? "rgba(201,168,76,0.3)" : "#c9a84c",
+              color: (publishing || selectedIds.size === 0 || result?.success) ? "rgba(0,0,0,0.4)" : "#0a0a1a",
+              border: "none", padding: "13px 20px", borderRadius: "8px",
+              fontFamily: "Cinzel, serif", fontSize: "13px", letterSpacing: "0.08em",
+              cursor: (publishing || selectedIds.size === 0 || result?.success) ? "not-allowed" : "pointer",
+              fontWeight: 600,
+            }}
+          >
+            {publishing ? "Publikuji..." : result?.success ? "✓ Hotovo" : "✦ Publikovat nyní"}
+          </button>
+          <button
+            onClick={onClose}
+            style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.4)", padding: "13px 20px", borderRadius: "8px", fontFamily: "'DM Sans', sans-serif", fontSize: "13px", cursor: "pointer" }}
+          >
+            Zavřít
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Generátor ────────────────────────────────────────────────────────────────
+
 function GeneratorSection() {
   const [philosopher, setPhilosopher] = useState("Epiktétos");
   const [topic, setTopic] = useState("Klid");
@@ -123,6 +314,8 @@ function GeneratorSection() {
   const [quote, setQuote] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [showPublishModal, setShowPublishModal] = useState(false);
+  const [downloading, setDownloading] = useState(false);
 
   const generate = async () => {
     setLoading(true); setError(""); setQuote("");
@@ -135,8 +328,33 @@ function GeneratorSection() {
     finally { setLoading(false); }
   };
 
+  const downloadPng = async () => {
+    const el = document.getElementById("quote-preview");
+    if (!el) return;
+    setDownloading(true);
+    try {
+      const { default: html2canvas } = await import("html2canvas");
+      const scale = 1080 / el.offsetWidth;
+      const canvas = await html2canvas(el, { scale, useCORS: true, backgroundColor: null });
+      const link = document.createElement("a");
+      link.download = `quote_${Date.now()}.png`;
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   return (
     <>
+      {showPublishModal && (
+        <PublishModal
+          quote={quote}
+          philosopher={philosopher}
+          onClose={() => setShowPublishModal(false)}
+        />
+      )}
+
       <div style={S.card}>
         <div style={S.sectionTitle}>GENEROVÁNÍ CITÁTU</div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "16px", marginBottom: "20px" }}>
@@ -159,11 +377,12 @@ function GeneratorSection() {
           </div>
         )}
       </div>
+
       {quote && !loading && (
         <div style={S.card}>
           <div style={S.sectionTitle}>NÁHLED PŘÍSPĚVKU</div>
           <div style={{ display: "flex", gap: "32px", flexWrap: "wrap", alignItems: "flex-start" }}>
-            <InstagramPreview quote={quote} philosopher={philosopher} />
+            <InstagramPreview quote={quote} philosopher={philosopher} previewId="quote-preview" />
             <div style={{ flex: 1, minWidth: "200px" }}>
               <p style={{ fontSize: "12px", color: "rgba(255,255,255,0.3)", fontFamily: "'DM Sans', sans-serif", lineHeight: 1.6, marginBottom: "12px" }}>Náhled ve formátu 1:1 pro Instagram.</p>
               <div style={{ fontSize: "12px", color: "rgba(255,255,255,0.2)", fontFamily: "Cinzel, serif", letterSpacing: "0.1em" }}>
@@ -174,20 +393,35 @@ function GeneratorSection() {
           </div>
         </div>
       )}
+
       {quote && !loading && (
         <div style={S.card}>
           <div style={S.sectionTitle}>EXPORT / PUBLIKACE</div>
-          <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", marginBottom: "16px" }}>
-            {["⬇ Stáhnout jako PNG", "📷 Publikovat na Instagram", "🎵 Publikovat na TikTok"].map(btn => (
-              <button key={btn} disabled style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.2)", padding: "10px 18px", borderRadius: "8px", fontFamily: "'DM Sans', sans-serif", fontSize: "13px", cursor: "not-allowed" }}>{btn}</button>
-            ))}
+          <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+            <button
+              onClick={downloadPng}
+              disabled={downloading}
+              style={{ background: downloading ? "rgba(201,168,76,0.2)" : "rgba(201,168,76,0.08)", border: "1px solid rgba(201,168,76,0.3)", color: downloading ? "rgba(201,168,76,0.4)" : "#c9a84c", padding: "10px 18px", borderRadius: "8px", fontFamily: "'DM Sans', sans-serif", fontSize: "13px", cursor: downloading ? "not-allowed" : "pointer", transition: "all 0.15s" }}
+            >
+              {downloading ? "Generuji PNG..." : "⬇ Stáhnout jako PNG"}
+            </button>
+            <button
+              onClick={() => setShowPublishModal(true)}
+              style={{ background: "#c9a84c", color: "#0a0a1a", border: "none", padding: "10px 18px", borderRadius: "8px", fontFamily: "Cinzel, serif", fontSize: "13px", letterSpacing: "0.06em", cursor: "pointer", fontWeight: 600, transition: "all 0.15s" }}
+            >
+              ✦ Publikovat
+            </button>
           </div>
-          <p style={{ fontSize: "12px", color: "rgba(255,255,255,0.2)", fontFamily: "'DM Sans', sans-serif" }}>Publikace bude dostupná brzy.</p>
+          <p style={{ fontSize: "11px", color: "rgba(255,255,255,0.2)", fontFamily: "'DM Sans', sans-serif", marginTop: "12px" }}>
+            PNG se exportuje v rozlišení 1080×1080 px.
+          </p>
         </div>
       )}
     </>
   );
 }
+
+// ─── Příběhy ──────────────────────────────────────────────────────────────────
 
 type AdminStory = {
   id: string;
@@ -291,14 +525,12 @@ function StoriesSection() {
 
   return (
     <>
-      {/* Toast */}
       {toast && (
         <div style={{ position: "fixed", top: "20px", left: "50%", transform: "translateX(-50%)", zIndex: 100, background: "#c9a84c", color: "#0a0a1a", padding: "10px 24px", borderRadius: "999px", fontFamily: "'DM Sans', sans-serif", fontSize: "13px", fontWeight: 600 }}>
           {toast}
         </div>
       )}
 
-      {/* Form */}
       <div style={S.card}>
         <div style={S.sectionTitle}>{editId ? "UPRAVIT PŘÍBĚH" : "PŘIDAT PŘÍBĚH"}</div>
         <form onSubmit={handleSubmit}>
@@ -309,7 +541,6 @@ function StoriesSection() {
             <TextField label="Cena (Kč)" {...field("price_czk")} placeholder="49" type="number" />
           </div>
 
-          {/* Description */}
           <div style={{ marginBottom: "16px" }}>
             <label style={S.label}>Popis</label>
             <textarea
@@ -328,7 +559,6 @@ function StoriesSection() {
             <TextField label="Stripe Price ID (volitelné)" {...field("stripe_price_id")} placeholder="price_xxx" />
           </div>
 
-          {/* Published toggle */}
           <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "20px" }}>
             <input
               type="checkbox"
@@ -361,7 +591,6 @@ function StoriesSection() {
         </form>
       </div>
 
-      {/* Stories list */}
       <div style={S.card}>
         <div style={S.sectionTitle}>SEZNAM PŘÍBĚHŮ ({stories.length})</div>
         {listLoading ? (
@@ -418,6 +647,8 @@ function StoriesSection() {
   );
 }
 
+// ─── Dashboard ────────────────────────────────────────────────────────────────
+
 function DashboardSection() {
   const [storyCount, setStoryCount] = useState<number | null>(null);
 
@@ -470,31 +701,7 @@ function PlaceholderSection({ label }: { label: string }) {
   );
 }
 
-type SocialAccount = {
-  id: string;
-  platform: string;
-  account_name: string | null;
-  zernio_account_id: string;
-  is_active: boolean;
-  created_at: string;
-};
-
-const PLATFORMS = [
-  { value: "instagram", label: "Instagram" },
-  { value: "tiktok", label: "TikTok" },
-  { value: "facebook", label: "Facebook" },
-  { value: "youtube", label: "YouTube" },
-  { value: "twitter", label: "X (Twitter)" },
-  { value: "bluesky", label: "Bluesky" },
-  { value: "linkedin", label: "LinkedIn" },
-  { value: "pinterest", label: "Pinterest" },
-  { value: "threads", label: "Threads" },
-];
-
-const PLATFORM_ICON: Record<string, string> = {
-  instagram: "📷", tiktok: "🎵", facebook: "f", youtube: "▶",
-  twitter: "𝕏", bluesky: "🦋", linkedin: "in", pinterest: "𝗣", threads: "⊕",
-};
+// ─── Připojené sítě ───────────────────────────────────────────────────────────
 
 function SocialNetworksSection() {
   const [accounts, setAccounts] = useState<SocialAccount[]>([]);
@@ -517,7 +724,6 @@ function SocialNetworksSection() {
 
   useEffect(() => { fetchAccounts(); }, []);
 
-  // Polling každé 3s dokud se popup nezavře nebo nenajde účet
   useEffect(() => {
     if (!connecting || !connectingPlatform) return;
 
@@ -554,7 +760,6 @@ function SocialNetworksSection() {
       const w = window.open(authUrl, "zernio-oauth", "width=520,height=680,scrollbars=yes,resizable=yes");
       setPopup(w);
 
-      // Pokud uživatel zavře popup bez připojení, zastav polling
       const checkClosed = setInterval(() => {
         if (w?.closed) {
           clearInterval(checkClosed);
@@ -600,34 +805,16 @@ function SocialNetworksSection() {
         </div>
       )}
 
-      {/* Připojit novou síť */}
       <div style={S.card}>
         <div style={S.sectionTitle}>PŘIPOJIT SOCIÁLNÍ SÍŤ</div>
         <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "flex-end" }}>
           <div style={{ flex: 1, minWidth: "180px" }}>
-            <SelectField
-              label="Platforma"
-              value={platform}
-              onChange={setPlatform}
-              options={PLATFORMS}
-            />
+            <SelectField label="Platforma" value={platform} onChange={setPlatform} options={PLATFORMS} />
           </div>
           <button
             onClick={handleConnect}
             disabled={connecting}
-            style={{
-              background: connecting ? "rgba(201,168,76,0.3)" : "#c9a84c",
-              color: connecting ? "rgba(0,0,0,0.5)" : "#0a0a1a",
-              border: "none",
-              padding: "11px 24px",
-              borderRadius: "8px",
-              fontFamily: "Cinzel, serif",
-              fontSize: "13px",
-              letterSpacing: "0.08em",
-              cursor: connecting ? "not-allowed" : "pointer",
-              fontWeight: 600,
-              whiteSpace: "nowrap" as const,
-            }}
+            style={{ background: connecting ? "rgba(201,168,76,0.3)" : "#c9a84c", color: connecting ? "rgba(0,0,0,0.5)" : "#0a0a1a", border: "none", padding: "11px 24px", borderRadius: "8px", fontFamily: "Cinzel, serif", fontSize: "13px", letterSpacing: "0.08em", cursor: connecting ? "not-allowed" : "pointer", fontWeight: 600, whiteSpace: "nowrap" as const }}
           >
             {connecting ? `Čekám na ${connectingPlatform}...` : "⬡ Připojit síť"}
           </button>
@@ -639,7 +826,6 @@ function SocialNetworksSection() {
         )}
       </div>
 
-      {/* Seznam připojených účtů */}
       <div style={S.card}>
         <div style={S.sectionTitle}>PŘIPOJENÉ ÚČTY ({accounts.length})</div>
         {loading ? (
@@ -649,54 +835,19 @@ function SocialNetworksSection() {
         ) : (
           <div style={{ display: "flex", flexDirection: "column" as const, gap: "10px" }}>
             {accounts.map(acct => (
-              <div
-                key={acct.id}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "14px",
-                  background: "#0f1117",
-                  border: "1px solid rgba(255,255,255,0.06)",
-                  borderRadius: "10px",
-                  padding: "14px 16px",
-                }}
-              >
+              <div key={acct.id} style={{ display: "flex", alignItems: "center", gap: "14px", background: "#0f1117", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "10px", padding: "14px 16px" }}>
                 <span style={{ fontSize: "20px", width: "28px", textAlign: "center" as const }}>{PLATFORM_ICON[acct.platform] ?? "⬡"}</span>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontFamily: "Cinzel, serif", color: "#c9a84c", fontSize: "13px" }}>
-                    {acct.platform.charAt(0).toUpperCase() + acct.platform.slice(1)}
-                  </div>
-                  <div style={{ fontFamily: "'DM Sans', sans-serif", color: "rgba(255,255,255,0.45)", fontSize: "12px", marginTop: "2px" }}>
-                    @{acct.account_name ?? acct.zernio_account_id}
-                  </div>
+                  <div style={{ fontFamily: "Cinzel, serif", color: "#c9a84c", fontSize: "13px" }}>{acct.platform.charAt(0).toUpperCase() + acct.platform.slice(1)}</div>
+                  <div style={{ fontFamily: "'DM Sans', sans-serif", color: "rgba(255,255,255,0.45)", fontSize: "12px", marginTop: "2px" }}>@{acct.account_name ?? acct.zernio_account_id}</div>
                 </div>
-                <span style={{
-                  padding: "3px 10px",
-                  borderRadius: "999px",
-                  fontSize: "10px",
-                  fontFamily: "'DM Sans', sans-serif",
-                  letterSpacing: "0.05em",
-                  background: acct.is_active ? "rgba(0,255,136,0.1)" : "rgba(255,255,255,0.06)",
-                  color: acct.is_active ? "#00FF88" : "rgba(255,255,255,0.35)",
-                  border: `1px solid ${acct.is_active ? "rgba(0,255,136,0.2)" : "rgba(255,255,255,0.08)"}`,
-                  whiteSpace: "nowrap" as const,
-                }}>
+                <span style={{ padding: "3px 10px", borderRadius: "999px", fontSize: "10px", fontFamily: "'DM Sans', sans-serif", letterSpacing: "0.05em", background: acct.is_active ? "rgba(0,255,136,0.1)" : "rgba(255,255,255,0.06)", color: acct.is_active ? "#00FF88" : "rgba(255,255,255,0.35)", border: `1px solid ${acct.is_active ? "rgba(0,255,136,0.2)" : "rgba(255,255,255,0.08)"}`, whiteSpace: "nowrap" as const }}>
                   {acct.is_active ? "Aktivní" : "Neaktivní"}
                 </span>
                 <button
                   onClick={() => handleDisconnect(acct)}
                   disabled={disconnecting === acct.id}
-                  style={{
-                    background: "transparent",
-                    border: "1px solid rgba(255,100,100,0.2)",
-                    color: "rgba(255,100,100,0.6)",
-                    padding: "6px 14px",
-                    borderRadius: "6px",
-                    fontFamily: "'DM Sans', sans-serif",
-                    fontSize: "11px",
-                    cursor: disconnecting === acct.id ? "not-allowed" : "pointer",
-                    whiteSpace: "nowrap" as const,
-                  }}
+                  style={{ background: "transparent", border: "1px solid rgba(255,100,100,0.2)", color: "rgba(255,100,100,0.6)", padding: "6px 14px", borderRadius: "6px", fontFamily: "'DM Sans', sans-serif", fontSize: "11px", cursor: disconnecting === acct.id ? "not-allowed" : "pointer", whiteSpace: "nowrap" as const }}
                 >
                   {disconnecting === acct.id ? "..." : "Odpojit"}
                 </button>
@@ -708,6 +859,8 @@ function SocialNetworksSection() {
     </>
   );
 }
+
+// ─── Hlavní stránka ───────────────────────────────────────────────────────────
 
 export default function AdminPage() {
   const router = useRouter();
