@@ -7,7 +7,7 @@ import { supabase } from "@/lib/supabase";
 const ICONS = [
   { src: "/icon_dychani.png", label: "DÝCHÁNÍ", onClick: (router: ReturnType<typeof useRouter>) => router.push("/uvnitr/dychani") },
   { src: "/icon_cteni.png", label: "KE ČTENÍ", onClick: (router: ReturnType<typeof useRouter>) => router.push("/uvnitr/obchod") },
-  { src: "/icon_youtube.png", label: "YOUTUBE", onClick: () => window.open("https://www.youtube.com/@klidvchaosu", "_blank") },
+  { src: "/icon_youtube.png", label: "PŘÍBĚHY", onClick: (router: ReturnType<typeof useRouter>) => router.push("/uvnitr/youtube") },
 ];
 
 const PHIL_ORDER = ["epiktetos", "marcus", "seneca"] as const;
