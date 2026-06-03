@@ -1,9 +1,9 @@
 "use client";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
-export default function ZernioCallbackPage() {
+function ZernioCallbackContent() {
   const searchParams = useSearchParams();
   const [status, setStatus] = useState<"loading" | "ok" | "error">("loading");
   const [message, setMessage] = useState("Připojuji účet...");
@@ -27,7 +27,6 @@ export default function ZernioCallbackPage() {
         });
 
         if (!res.ok) {
-          // Zkus znovu přes supabase session (fallback)
           const { data: { session } } = await supabase.auth.getSession();
           if (!session) throw new Error("Nejsi přihlášen/á jako admin.");
           throw new Error(`API error ${res.status}`);
@@ -37,7 +36,6 @@ export default function ZernioCallbackPage() {
         setStatus("ok");
         setMessage(`Připojeno: @${data.username} (${data.platform})`);
 
-        // Zavři popup po 2s
         setTimeout(() => {
           if (window.opener) window.close();
         }, 2000);
@@ -89,5 +87,13 @@ export default function ZernioCallbackPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function ZernioCallbackPage() {
+  return (
+    <Suspense fallback={<div style={{ minHeight: "100vh", background: "#0f1117" }} />}>
+      <ZernioCallbackContent />
+    </Suspense>
   );
 }
