@@ -3,7 +3,7 @@ import { useState, useRef, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { supabase } from "@/lib/supabase";
-import { getMsgCount, incrementMsgCount, FREE_MSG_LIMIT } from "@/lib/auth";
+import { getUserSubscriptionStatus, type SubscriptionStatus } from "@/lib/subscription";
 
 type Message = { role: "user" | "assistant"; content: string };
 
@@ -30,15 +30,22 @@ function ChatContent() {
   const [loading, setLoading] = useState(false);
   const [showPaywall, setShowPaywall] = useState(false);
   const [showPhilPicker, setShowPhilPicker] = useState(false);
+  const [subscriptionStatus, setSubscriptionStatus] = useState<SubscriptionStatus | null>(null);
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const phil = PHILOSOPHERS[philosopher];
   const [user, setUser] = useState<{ name: string } | null>(null);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (!user) { router.replace("/prihlaseni"); return; }
       setUser({ name: user.user_metadata?.name || user.email?.split("@")[0] || "" });
+
+      const status = await getUserSubscriptionStatus(user.id, user.created_at)
+      setSubscriptionStatus(status)
+      if (!status.isActive) setShowPaywall(true)
+
       setMessages([{ role: "assistant", content: getGreeting(philosopher) }]);
     });
   }, [philosopher, router]);
@@ -47,6 +54,19 @@ function ChatContent() {
     await supabase.auth.signOut();
     router.push("/");
   };
+
+  const handleSubscribe = async () => {
+    setCheckoutLoading(true)
+    try {
+      const res = await fetch('/api/stripe/checkout', { method: 'POST' })
+      const { url } = await res.json()
+      if (url) window.location.href = url
+    } catch {
+      console.error('Checkout error')
+    } finally {
+      setCheckoutLoading(false)
+    }
+  }
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -64,15 +84,13 @@ function ChatContent() {
 
   const send = async () => {
     if (!input.trim() || loading) return;
-    const count = getMsgCount();
-    if (count >= FREE_MSG_LIMIT) { setShowPaywall(true); return; }
+    if (!subscriptionStatus?.isActive) { setShowPaywall(true); return; }
 
     const userMsg: Message = { role: "user", content: input.trim() };
     const updatedMessages = [...messages, userMsg];
     setMessages(updatedMessages);
     setInput("");
     setLoading(true);
-    incrementMsgCount();
 
     try {
       const res = await fetch("/api/chat", {
@@ -105,7 +123,11 @@ function ChatContent() {
     }
   };
 
-  const remaining = Math.max(0, FREE_MSG_LIMIT - getMsgCount());
+  const statusLabel = subscriptionStatus?.isTrial
+    ? `Trial: ${subscriptionStatus.daysLeft} ${subscriptionStatus.daysLeft === 1 ? "den" : subscriptionStatus.daysLeft < 5 ? "dny" : "dní"}`
+    : subscriptionStatus?.isActive
+    ? "Premium aktivní"
+    : "Trial vypršel";
 
   return (
     <div
@@ -125,14 +147,8 @@ function ChatContent() {
           </div>
           <span style={{ fontFamily: "Cinzel, serif", fontSize: "9px", letterSpacing: "2px", color: "#c9a84c", marginTop: "3px" }}>DOMŮ</span>
         </div>
-        <button
-          onClick={() => setShowPhilPicker(true)}
-          className="flex items-center gap-3 flex-1"
-        >
-          <div
-            className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0"
-            style={{ border: `2px solid ${phil.color}`, position: "relative" }}
-          >
+        <button onClick={() => setShowPhilPicker(true)} className="flex items-center gap-3 flex-1">
+          <div className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0" style={{ border: `2px solid ${phil.color}`, position: "relative" }}>
             {phil.portrait ? (
               <Image src={phil.portrait} alt={phil.name} fill style={{ objectFit: "cover" }} />
             ) : (
@@ -169,10 +185,7 @@ function ChatContent() {
         {messages.map((m, i) => (
           <div key={i} className={`flex gap-3 ${m.role === "user" ? "justify-end" : "justify-start"}`}>
             {m.role === "assistant" && (
-              <div
-                className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0 mt-1"
-                style={{ border: `1px solid ${phil.color}`, position: "relative" }}
-              >
+              <div className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0 mt-1" style={{ border: `1px solid ${phil.color}`, position: "relative" }}>
                 {phil.portrait ? (
                   <Image src={phil.portrait} alt={phil.name} fill style={{ objectFit: "cover" }} />
                 ) : (
@@ -241,8 +254,8 @@ function ChatContent() {
             </svg>
           </button>
         </div>
-        <p className="text-center text-xs mt-2" style={{ fontFamily: "'DM Sans', sans-serif", color: "rgba(255,255,255,0.4)" }}>
-          {remaining > 0 ? `${remaining} volných zpráv` : "Limit volných zpráv vyčerpán"}
+        <p className="text-center text-xs mt-2" style={{ fontFamily: "'DM Sans', sans-serif", color: subscriptionStatus?.isActive ? "rgba(255,255,255,0.35)" : "#ff6b6b" }}>
+          {statusLabel}
         </p>
       </div>
 
@@ -277,23 +290,75 @@ function ChatContent() {
 
       {/* Paywall modal */}
       {showPaywall && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-6" style={{ background: "rgba(10,10,26,0.95)" }}>
-          <div className="max-w-sm w-full p-8 rounded-2xl text-center" style={{ background: "rgba(255,215,0,0.06)", border: "1px solid rgba(255,215,0,0.3)" }}>
-            <div className="text-3xl mb-4">🔒</div>
-            <h2 className="text-xl font-bold mb-3" style={{ fontFamily: "Cinzel, serif", color: "#FFD700" }}>Pokračuj v rozhovoru</h2>
-            <p className="text-sm mb-2 leading-relaxed" style={{ fontFamily: "'DM Sans', sans-serif", color: "#fff" }}>
-              Využil jsi {FREE_MSG_LIMIT} volných zpráv.
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-6" style={{ background: "rgba(5,4,15,0.96)" }}>
+          <div
+            className="max-w-sm w-full p-8 rounded-2xl text-center"
+            style={{
+              background: "linear-gradient(145deg, #0d0a1e, #120f22)",
+              border: "1px solid rgba(201,168,76,0.4)",
+              boxShadow: "0 0 60px rgba(201,168,76,0.08), inset 0 0 40px rgba(201,168,76,0.03)",
+            }}
+          >
+            {/* Icon */}
+            <div style={{ width: "56px", height: "56px", borderRadius: "50%", border: "1px solid rgba(201,168,76,0.3)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px", background: "rgba(201,168,76,0.06)" }}>
+              <span style={{ fontFamily: "Cinzel, serif", color: "#c9a84c", fontSize: "22px" }}>ᚠ</span>
+            </div>
+
+            <h2 style={{ fontFamily: "Cinzel, serif", color: "#c9a84c", fontSize: "20px", letterSpacing: "0.1em", marginBottom: "10px" }}>
+              TRIAL VYPRŠEL
+            </h2>
+            <p style={{ fontFamily: "'DM Sans', sans-serif", color: "rgba(255,255,255,0.55)", fontSize: "13px", marginBottom: "24px", lineHeight: 1.6 }}>
+              Tvých 7 dní zdarma skončilo.<br />Pokračuj v rozhovorech s filozofy.
             </p>
-            <p className="text-2xl font-bold mb-6" style={{ fontFamily: "Cinzel, serif", color: "#FFD700" }}>150 Kč / měsíc</p>
+
+            {/* Price */}
+            <div style={{ marginBottom: "24px" }}>
+              <span style={{ fontFamily: "Cinzel, serif", color: "#fff", fontSize: "36px", fontWeight: 700 }}>90 Kč</span>
+              <span style={{ fontFamily: "'DM Sans', sans-serif", color: "rgba(255,255,255,0.4)", fontSize: "13px", marginLeft: "6px" }}>/měsíc</span>
+            </div>
+
+            {/* Features */}
+            <div style={{ marginBottom: "28px", textAlign: "left" }}>
+              {["Neomezené rozhovory s filozofy", "Dechová cvičení", "Přístup ke všem budoucím funkcím"].map(f => (
+                <div key={f} style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px" }}>
+                  <span style={{ color: "#c9a84c", fontSize: "12px" }}>✦</span>
+                  <span style={{ fontFamily: "'DM Sans', sans-serif", color: "rgba(255,255,255,0.6)", fontSize: "13px" }}>{f}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* CTA */}
             <button
-              className="block w-full py-4 font-semibold tracking-widest uppercase text-sm mb-3 transition-all hover:scale-105"
-              style={{ fontFamily: "Cinzel, serif", background: "#FFD700", color: "#0a0a1a" }}
+              onClick={handleSubscribe}
+              disabled={checkoutLoading}
+              style={{
+                width: "100%",
+                padding: "14px",
+                background: checkoutLoading ? "rgba(201,168,76,0.4)" : "#c9a84c",
+                color: checkoutLoading ? "rgba(0,0,0,0.4)" : "#0a0a1a",
+                border: "none",
+                borderRadius: "10px",
+                fontFamily: "Cinzel, serif",
+                fontSize: "13px",
+                letterSpacing: "0.12em",
+                fontWeight: 700,
+                cursor: checkoutLoading ? "not-allowed" : "pointer",
+                marginBottom: "12px",
+                transition: "all 0.2s",
+              }}
             >
-              Předplatit
+              {checkoutLoading ? "Přesměrování..." : "PŘEDPLATIT — 90 KČ/MĚSÍC"}
             </button>
-            <button onClick={() => setShowPaywall(false)} className="text-xs opacity-40 hover:opacity-60 transition-opacity" style={{ fontFamily: "'DM Sans', sans-serif" }}>
-              Zavřít
-            </button>
+
+            {/* Dismiss only if still in trial */}
+            {subscriptionStatus?.isTrial && (
+              <button
+                onClick={() => setShowPaywall(false)}
+                style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "12px", color: "rgba(255,255,255,0.25)", background: "none", border: "none", cursor: "pointer" }}
+              >
+                Zavřít
+              </button>
+            )}
           </div>
         </div>
       )}
