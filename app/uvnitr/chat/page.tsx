@@ -2,7 +2,8 @@
 import { useState, useRef, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
-import { getUser, getMsgCount, incrementMsgCount, FREE_MSG_LIMIT, logout } from "@/lib/auth";
+import { supabase } from "@/lib/supabase";
+import { getMsgCount, incrementMsgCount, FREE_MSG_LIMIT } from "@/lib/auth";
 
 type Message = { role: "user" | "assistant"; content: string };
 
@@ -32,16 +33,20 @@ function ChatContent() {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const phil = PHILOSOPHERS[philosopher];
-  const [user, setUser] = useState<{ name: string; email: string } | null>(null);
+  const [user, setUser] = useState<{ name: string } | null>(null);
 
   useEffect(() => {
-    const u = getUser();
-    if (!u) { router.replace("/prihlaseni"); return; }
-    setUser(u);
-    setMessages([{ role: "assistant", content: getGreeting(philosopher) }]);
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) { router.replace("/prihlaseni"); return; }
+      setUser({ name: user.user_metadata?.name || user.email?.split("@")[0] || "" });
+      setMessages([{ role: "assistant", content: getGreeting(philosopher) }]);
+    });
   }, [philosopher, router]);
 
-  const handleLogout = () => { logout(); router.push("/"); };
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.push("/");
+  };
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });

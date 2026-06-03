@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { saveUser, getUser } from "@/lib/auth";
+import { supabase } from "@/lib/supabase";
 
 export default function RegistracePage() {
   const router = useRouter();
@@ -11,21 +11,35 @@ export default function RegistracePage() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (getUser()) router.replace("/uvnitr");
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) router.replace("/uvnitr");
+    });
   }, [router]);
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     if (!form.name.trim()) return setError("Zadej své jméno.");
-    if (!form.email.includes("@")) return setError("Zadej platný email.");
     if (form.password.length < 6) return setError("Heslo musí mít alespoň 6 znaků.");
     if (form.password !== form.confirm) return setError("Hesla se neshodují.");
     setLoading(true);
-    setTimeout(() => {
-      saveUser(form.name.trim(), form.email.trim().toLowerCase());
-      router.push("/uvnitr");
-    }, 600);
+    const { error } = await supabase.auth.signUp({
+      email: form.email,
+      password: form.password,
+      options: { data: { name: form.name.trim() } },
+    });
+    if (error) {
+      if (error.message.toLowerCase().includes("already")) {
+        setError("Email již existuje.");
+      } else if (error.message.toLowerCase().includes("password")) {
+        setError("Heslo musí mít alespoň 6 znaků.");
+      } else {
+        setError(error.message);
+      }
+      setLoading(false);
+      return;
+    }
+    router.push("/uvnitr");
   };
 
   const inputStyle = {

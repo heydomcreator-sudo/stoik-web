@@ -2,25 +2,29 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { getUser, logout } from "@/lib/auth";
+import { supabase } from "@/lib/supabase";
 
 export default function ObchodPage() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
-  const [user, setUser] = useState<{ name: string; email: string } | null>(null);
+  const [user, setUser] = useState<{ name: string } | null>(null);
   const [toast, setToast] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [orderForm, setOrderForm] = useState({ name: "", email: "", address: "", psc: "", city: "" });
   const [orderLoading, setOrderLoading] = useState(false);
 
   useEffect(() => {
-    const u = getUser();
-    if (!u) { router.replace("/prihlaseni"); return; }
-    setUser(u);
-    setReady(true);
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) { router.replace("/prihlaseni"); return; }
+      setUser({ name: user.user_metadata?.name || user.email?.split("@")[0] || "" });
+      setReady(true);
+    });
   }, [router]);
 
-  const handleLogout = () => { logout(); router.push("/"); };
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.push("/");
+  };
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -148,7 +152,6 @@ export default function ObchodPage() {
           </p>
         </div>
       </main>
-
 
       {/* Order modal */}
       {showModal && (

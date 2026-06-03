@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { saveUser, getUser } from "@/lib/auth";
+import { supabase } from "@/lib/supabase";
 
 export default function PrihlaseniPage() {
   const router = useRouter();
@@ -11,20 +11,22 @@ export default function PrihlaseniPage() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (getUser()) router.replace("/uvnitr");
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) router.replace("/uvnitr");
+    });
   }, [router]);
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    if (!form.email.includes("@")) return setError("Zadej platný email.");
-    if (form.password.length < 1) return setError("Zadej heslo.");
     setLoading(true);
-    setTimeout(() => {
-      const name = form.email.split("@")[0];
-      saveUser(name, form.email.trim().toLowerCase());
-      router.push("/uvnitr");
-    }, 600);
+    const { error } = await supabase.auth.signInWithPassword({ email: form.email, password: form.password });
+    if (error) {
+      setError("Nesprávný email nebo heslo.");
+      setLoading(false);
+      return;
+    }
+    router.push("/uvnitr");
   };
 
   const inputStyle = {

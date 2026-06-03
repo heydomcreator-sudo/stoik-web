@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { getUser, logout } from "@/lib/auth";
+import { supabase } from "@/lib/supabase";
 
 const ICONS = [
   { src: "/icon_dychani.png", label: "DÝCHÁNÍ", onClick: (router: ReturnType<typeof useRouter>) => router.push("/uvnitr/dychani") },
@@ -34,12 +34,19 @@ export default function UvnitrPage() {
   const rightPhil = PHIL_ORDER[(activeIdx + 2) % 3];
 
   useEffect(() => {
-    const u = getUser();
-    if (!u) { router.replace("/prihlaseni"); return; }
-    setUser(u);
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) { router.replace("/prihlaseni"); return; }
+      setUser({
+        name: user.user_metadata?.name || user.email?.split("@")[0] || "",
+        email: user.email || "",
+      });
+    });
   }, [router]);
 
-  const handleLogout = () => { logout(); router.push("/"); };
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.push("/");
+  };
 
   if (!user) return null;
 

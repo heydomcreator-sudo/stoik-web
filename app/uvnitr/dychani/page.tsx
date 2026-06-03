@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { getUser, logout } from "@/lib/auth";
+import { supabase } from "@/lib/supabase";
 
 type Pattern = { name: string; label: string; phases: { label: string; duration: number }[] };
 
@@ -15,7 +15,7 @@ const patterns: Pattern[] = [
 export default function UvnitrDychaniPage() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
-  const [user, setUser] = useState<{ name: string; email: string } | null>(null);
+  const [user, setUser] = useState<{ name: string } | null>(null);
   const [selected, setSelected] = useState(0);
   const [running, setRunning] = useState(false);
   const [phaseIdx, setPhaseIdx] = useState(0);
@@ -26,13 +26,17 @@ export default function UvnitrDychaniPage() {
   const countRef = useRef(patterns[0].phases[0].duration);
 
   useEffect(() => {
-    const u = getUser();
-    if (!u) { router.replace("/prihlaseni"); return; }
-    setUser(u);
-    setReady(true);
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) { router.replace("/prihlaseni"); return; }
+      setUser({ name: user.user_metadata?.name || user.email?.split("@")[0] || "" });
+      setReady(true);
+    });
   }, [router]);
 
-  const handleLogout = () => { logout(); router.push("/"); };
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.push("/");
+  };
 
   const stop = useCallback(() => {
     if (intervalRef.current) clearInterval(intervalRef.current);
