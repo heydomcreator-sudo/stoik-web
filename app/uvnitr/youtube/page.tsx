@@ -20,6 +20,7 @@ function PribehyContent() {
   const router = useRouter();
   const params = useSearchParams();
   const [user, setUser] = useState<{ name: string } | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [stories, setStories] = useState<Story[]>([]);
   const [purchases, setPurchases] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
@@ -32,6 +33,7 @@ function PribehyContent() {
       const { data: { user: authUser } } = await supabase.auth.getUser();
       if (!authUser) { router.replace("/prihlaseni"); return; }
       setUser({ name: authUser.user_metadata?.name || authUser.email?.split("@")[0] || "" });
+      setIsAdmin(authUser.email === 'heydomcreator@gmail.com');
 
       if (params.get("success") === "true") setShowSuccess(true);
 
@@ -102,6 +104,16 @@ function PribehyContent() {
         </div>
         <div className="flex items-center gap-4">
           {user && <span className="text-xs hidden sm:block" style={{ fontFamily: "'DM Sans', sans-serif", color: "rgba(255,255,255,0.4)" }}>{user.name}</span>}
+          {isAdmin && (
+            <button
+              onClick={() => router.push("/admin")}
+              style={{ fontFamily: "Cinzel, serif", fontSize: "12px", letterSpacing: "1px", color: "#c9a84c", background: "transparent", border: "1px solid rgba(201,168,76,0.5)", borderRadius: "6px", padding: "6px 14px", cursor: "pointer", transition: "background 0.15s" }}
+              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(201,168,76,0.1)"; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
+            >
+              ADMIN
+            </button>
+          )}
           <button
             onClick={handleLogout}
             className="uppercase"

@@ -418,25 +418,43 @@ function StoriesSection() {
 }
 
 function DashboardSection() {
+  const [storyCount, setStoryCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    supabase.from("stories").select("id", { count: "exact", head: true })
+      .then(({ count }) => setStoryCount(count ?? 0));
+  }, []);
+
   const stats = [
-    { label: "Registrovaní uživatelé", value: "—" },
-    { label: "Aktivní předplatitelé", value: "—" },
-    { label: "Zprávy dnes", value: "—" },
-    { label: "Vygenerované citáty", value: "—" },
+    { label: "Uživatelé", value: "—", sub: "Dostupné přes Supabase Auth" },
+    { label: "Příběhy", value: storyCount !== null ? String(storyCount) : "...", sub: "Celkem v katalogu" },
+    { label: "MRR", value: "—", sub: "Měsíční příjem" },
   ];
+
   return (
     <>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "16px", marginBottom: "24px" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "16px", marginBottom: "24px" }}>
         {stats.map(s => (
           <div key={s.label} style={{ ...S.card, marginBottom: 0, textAlign: "center" as const }}>
-            <div style={{ fontSize: "28px", fontFamily: "Cinzel, serif", color: "#c9a84c", marginBottom: "8px" }}>{s.value}</div>
-            <div style={{ fontSize: "11px", color: "rgba(255,255,255,0.3)", fontFamily: "'DM Sans', sans-serif" }}>{s.label}</div>
+            <div style={{ fontSize: "38px", fontFamily: "Cinzel, serif", color: "#c9a84c", marginBottom: "6px", lineHeight: 1 }}>{s.value}</div>
+            <div style={{ fontSize: "13px", color: "rgba(255,255,255,0.6)", fontFamily: "'DM Sans', sans-serif", marginBottom: "4px", fontWeight: 500 }}>{s.label}</div>
+            <div style={{ fontSize: "10px", color: "rgba(255,255,255,0.25)", fontFamily: "'DM Sans', sans-serif" }}>{s.sub}</div>
           </div>
         ))}
       </div>
       <div style={S.card}>
-        <div style={S.sectionTitle}>PŘEHLED</div>
-        <p style={{ color: "rgba(255,255,255,0.3)", fontFamily: "'DM Sans', sans-serif", fontSize: "14px" }}>Statistiky budou dostupné po napojení na Supabase Analytics.</p>
+        <div style={S.sectionTitle}>RYCHLÝ PŘÍSTUP</div>
+        <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+          {[{ label: "Přidat příběh →", section: "stories" }, { label: "Generovat citát →", section: "generator" }].map(btn => (
+            <button
+              key={btn.label}
+              style={{ background: "rgba(201,168,76,0.06)", border: "1px solid rgba(201,168,76,0.2)", color: "#c9a84c", padding: "10px 18px", borderRadius: "8px", fontFamily: "Cinzel, serif", fontSize: "12px", letterSpacing: "0.06em", cursor: "pointer" }}
+              onClick={() => document.dispatchEvent(new CustomEvent("admin-nav", { detail: btn.section }))}
+            >
+              {btn.label}
+            </button>
+          ))}
+        </div>
       </div>
     </>
   );
@@ -453,8 +471,14 @@ function PlaceholderSection({ label }: { label: string }) {
 
 export default function AdminPage() {
   const router = useRouter();
-  const [activeSection, setActiveSection] = useState<Section>("generator");
+  const [activeSection, setActiveSection] = useState<Section>("dashboard");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    const handler = (e: Event) => setActiveSection((e as CustomEvent).detail as Section);
+    document.addEventListener("admin-nav", handler);
+    return () => document.removeEventListener("admin-nav", handler);
+  }, []);
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", background: "#0f1117", fontFamily: "'DM Sans', sans-serif", color: "#fff" }}>
@@ -462,10 +486,10 @@ export default function AdminPage() {
         <div onClick={() => setSidebarOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 40 }} className="lg-hidden" />
       )}
 
-      <aside style={{ width: "240px", background: "#13151c", borderRight: "1px solid rgba(201,168,76,0.12)", display: "flex", flexDirection: "column", flexShrink: 0, position: "fixed" as const, top: 0, left: 0, bottom: 0, zIndex: 50, transform: sidebarOpen ? "translateX(0)" : "translateX(-100%)", transition: "transform 0.25s ease" }} className="sidebar">
-        <div style={{ padding: "22px 20px 18px", borderBottom: "1px solid rgba(201,168,76,0.1)" }}>
-          <div style={{ fontFamily: "Cinzel, serif", color: "#c9a84c", fontSize: "13px", letterSpacing: "0.15em" }}>KLID V CHAOSU</div>
-          <div style={{ color: "rgba(255,255,255,0.25)", fontSize: "11px", marginTop: "3px", letterSpacing: "0.05em" }}>Admin panel</div>
+      <aside style={{ width: "240px", background: "#13151e", borderRight: "0.5px solid rgba(201,168,76,0.2)", display: "flex", flexDirection: "column", flexShrink: 0, position: "fixed" as const, top: 0, left: 0, bottom: 0, zIndex: 50, transform: sidebarOpen ? "translateX(0)" : "translateX(-100%)", transition: "transform 0.25s ease" }} className="sidebar">
+        <div style={{ padding: "24px 20px 20px", borderBottom: "1px solid rgba(201,168,76,0.12)" }}>
+          <div style={{ fontFamily: "Cinzel, serif", color: "#c9a84c", fontSize: "18px", letterSpacing: "4px" }}>ADMIN</div>
+          <div style={{ color: "rgba(255,255,255,0.2)", fontSize: "10px", marginTop: "4px", letterSpacing: "0.08em", fontFamily: "'DM Sans', sans-serif" }}>Klid v Chaosu</div>
         </div>
 
         <nav style={{ flex: 1, padding: "8px 0" }}>

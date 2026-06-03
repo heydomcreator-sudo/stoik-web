@@ -16,6 +16,7 @@ export default function UvnitrDychaniPage() {
   const router = useRouter();
   const [ready, setReady] = useState(false);
   const [user, setUser] = useState<{ name: string } | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [selected, setSelected] = useState(0);
   const [running, setRunning] = useState(false);
   const [phaseIdx, setPhaseIdx] = useState(0);
@@ -29,6 +30,7 @@ export default function UvnitrDychaniPage() {
     supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) { router.replace("/prihlaseni"); return; }
       setUser({ name: user.user_metadata?.name || user.email?.split("@")[0] || "" });
+      setIsAdmin(user.email === 'heydomcreator@gmail.com');
       setReady(true);
     });
   }, [router]);
@@ -93,6 +95,16 @@ export default function UvnitrDychaniPage() {
         </div>
         <div className="flex items-center gap-3">
           {user && <span className="text-xs hidden sm:block" style={{ fontFamily: "'DM Sans', sans-serif", color: "rgba(255,255,255,0.4)" }}>{user.name}</span>}
+          {isAdmin && (
+            <button
+              onClick={() => router.push("/admin")}
+              style={{ fontFamily: "Cinzel, serif", fontSize: "12px", letterSpacing: "1px", color: "#c9a84c", background: "transparent", border: "1px solid rgba(201,168,76,0.5)", borderRadius: "6px", padding: "6px 14px", cursor: "pointer", transition: "background 0.15s" }}
+              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(201,168,76,0.1)"; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
+            >
+              ADMIN
+            </button>
+          )}
           <button
             onClick={handleLogout}
             className="uppercase transition-all duration-200"

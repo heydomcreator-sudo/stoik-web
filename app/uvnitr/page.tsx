@@ -82,6 +82,16 @@ export default function UvnitrPage() {
           <span className="text-xs hidden sm:block" style={{ fontFamily: "'DM Sans', sans-serif", color: "rgba(255,255,255,0.4)" }}>
             {user.name}
           </span>
+          {user.email === 'heydomcreator@gmail.com' && (
+            <button
+              onClick={() => router.push("/admin")}
+              style={{ fontFamily: "Cinzel, serif", fontSize: "12px", letterSpacing: "1px", color: "#c9a84c", background: "transparent", border: "1px solid rgba(201,168,76,0.5)", borderRadius: "6px", padding: "6px 14px", cursor: "pointer", transition: "background 0.15s" }}
+              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(201,168,76,0.1)"; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
+            >
+              ADMIN
+            </button>
+          )}
           <button
             onClick={handleLogout}
             className="uppercase transition-all duration-200"
