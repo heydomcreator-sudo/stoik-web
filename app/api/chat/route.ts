@@ -1,6 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
 
+export const maxDuration = 30;
+
 const SYSTEM_PROMPTS: Record<string, string> = {
   epiktetos:
     "Jsi Epiktétos, řecký stoický filosof (50–135 n.l.), bývalý otrok. Mluvíš česky. Odpovídáš stručně, přímo, bez zbytečných slov. Zaměřuješ se na dichotomii kontroly — co je v naší moci a co není. Nikdy nelituješ, nelichotíš. Max 3-4 věty.",
@@ -20,7 +22,7 @@ export async function POST(req: NextRequest) {
     const systemPrompt = SYSTEM_PROMPTS[philosopher] ?? SYSTEM_PROMPTS.epiktetos;
 
     const stream = await client.messages.stream({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-haiku-4-5-20251001",
       max_tokens: 300,
       system: systemPrompt,
       messages,
@@ -29,20 +31,28 @@ export async function POST(req: NextRequest) {
     const encoder = new TextEncoder();
     const readable = new ReadableStream({
       async start(controller) {
-        for await (const chunk of stream) {
-          if (chunk.type === "content_block_delta" && chunk.delta.type === "text_delta") {
-            controller.enqueue(encoder.encode(chunk.delta.text));
+        try {
+          for await (const chunk of stream) {
+            if (
+              chunk.type === "content_block_delta" &&
+              chunk.delta.type === "text_delta"
+            ) {
+              controller.enqueue(encoder.encode(chunk.delta.text));
+            }
           }
+          controller.close();
+        } catch (streamError) {
+          console.error("Anthropic stream error:", streamError);
+          controller.error(streamError);
         }
-        controller.close();
       },
     });
 
     return new NextResponse(readable, {
-      headers: { "Content-Type": "text/plain; charset=utf-8", "Transfer-Encoding": "chunked" },
+      headers: { "Content-Type": "text/plain; charset=utf-8" },
     });
-  } catch (err) {
-    console.error(err);
+  } catch (error) {
+    console.error("Anthropic error:", error);
     return NextResponse.json({ error: "Chyba serveru" }, { status: 500 });
   }
 }
