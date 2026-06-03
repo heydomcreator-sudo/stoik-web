@@ -3,12 +3,13 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
-type Section = "dashboard" | "generator" | "users" | "settings" | "stories";
+type Section = "dashboard" | "generator" | "users" | "settings" | "stories" | "networks";
 
 const NAV: { id: Section; label: string; icon: string }[] = [
   { id: "dashboard", label: "Dashboard", icon: "▦" },
   { id: "generator", label: "Generátor obsahu", icon: "✦" },
   { id: "stories", label: "Příběhy", icon: "◈" },
+  { id: "networks", label: "Připojené sítě", icon: "⬡" },
   { id: "users", label: "Uživatelé", icon: "◎" },
   { id: "settings", label: "Nastavení", icon: "◇" },
 ];
@@ -469,6 +470,245 @@ function PlaceholderSection({ label }: { label: string }) {
   );
 }
 
+type SocialAccount = {
+  id: string;
+  platform: string;
+  account_name: string | null;
+  zernio_account_id: string;
+  is_active: boolean;
+  created_at: string;
+};
+
+const PLATFORMS = [
+  { value: "instagram", label: "Instagram" },
+  { value: "tiktok", label: "TikTok" },
+  { value: "facebook", label: "Facebook" },
+  { value: "youtube", label: "YouTube" },
+  { value: "twitter", label: "X (Twitter)" },
+  { value: "bluesky", label: "Bluesky" },
+  { value: "linkedin", label: "LinkedIn" },
+  { value: "pinterest", label: "Pinterest" },
+  { value: "threads", label: "Threads" },
+];
+
+const PLATFORM_ICON: Record<string, string> = {
+  instagram: "📷", tiktok: "🎵", facebook: "f", youtube: "▶",
+  twitter: "𝕏", bluesky: "🦋", linkedin: "in", pinterest: "𝗣", threads: "⊕",
+};
+
+function SocialNetworksSection() {
+  const [accounts, setAccounts] = useState<SocialAccount[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [platform, setPlatform] = useState("instagram");
+  const [connecting, setConnecting] = useState(false);
+  const [connectingPlatform, setConnectingPlatform] = useState("");
+  const [disconnecting, setDisconnecting] = useState<string | null>(null);
+  const [toast, setToast] = useState("");
+  const [popup, setPopup] = useState<Window | null>(null);
+
+  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(""), 3500); };
+
+  const fetchAccounts = async () => {
+    setLoading(true);
+    const { data } = await supabase.from("social_accounts").select("*").order("created_at", { ascending: false });
+    setAccounts((data as SocialAccount[]) || []);
+    setLoading(false);
+  };
+
+  useEffect(() => { fetchAccounts(); }, []);
+
+  // Polling každé 3s dokud se popup nezavře nebo nenajde účet
+  useEffect(() => {
+    if (!connecting || !connectingPlatform) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/zernio-poll?platform=${connectingPlatform}`, { credentials: "include" });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.connected) {
+          clearInterval(interval);
+          setConnecting(false);
+          setConnectingPlatform("");
+          popup?.close();
+          setPopup(null);
+          showToast(`Připojeno: @${data.username} (${data.platform})`);
+          fetchAccounts();
+        }
+      } catch { /* pokračuj v pollingu */ }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [connecting, connectingPlatform, popup]);
+
+  const handleConnect = async () => {
+    setConnecting(true);
+    setConnectingPlatform(platform);
+    try {
+      const res = await fetch(`/api/zernio-connect?platform=${platform}`, { credentials: "include" });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      const { authUrl } = await res.json();
+      const w = window.open(authUrl, "zernio-oauth", "width=520,height=680,scrollbars=yes,resizable=yes");
+      setPopup(w);
+
+      // Pokud uživatel zavře popup bez připojení, zastav polling
+      const checkClosed = setInterval(() => {
+        if (w?.closed) {
+          clearInterval(checkClosed);
+          setConnecting(false);
+          setConnectingPlatform("");
+          setPopup(null);
+        }
+      }, 1000);
+    } catch (err) {
+      setConnecting(false);
+      setConnectingPlatform("");
+      showToast(err instanceof Error ? err.message : "Připojení selhalo.");
+    }
+  };
+
+  const handleDisconnect = async (acct: SocialAccount) => {
+    if (!confirm(`Odpojit @${acct.account_name ?? acct.zernio_account_id} (${acct.platform})?`)) return;
+    setDisconnecting(acct.id);
+    try {
+      const res = await fetch("/api/zernio-disconnect", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ zernio_account_id: acct.zernio_account_id }),
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      showToast(`Odpojeno: ${acct.platform}`);
+      fetchAccounts();
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Odpojení selhalo.");
+    }
+    setDisconnecting(null);
+  };
+
+  return (
+    <>
+      {toast && (
+        <div style={{ position: "fixed", top: "20px", left: "50%", transform: "translateX(-50%)", zIndex: 100, background: "#c9a84c", color: "#0a0a1a", padding: "10px 24px", borderRadius: "999px", fontFamily: "'DM Sans', sans-serif", fontSize: "13px", fontWeight: 600 }}>
+          {toast}
+        </div>
+      )}
+
+      {/* Připojit novou síť */}
+      <div style={S.card}>
+        <div style={S.sectionTitle}>PŘIPOJIT SOCIÁLNÍ SÍŤ</div>
+        <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "flex-end" }}>
+          <div style={{ flex: 1, minWidth: "180px" }}>
+            <SelectField
+              label="Platforma"
+              value={platform}
+              onChange={setPlatform}
+              options={PLATFORMS}
+            />
+          </div>
+          <button
+            onClick={handleConnect}
+            disabled={connecting}
+            style={{
+              background: connecting ? "rgba(201,168,76,0.3)" : "#c9a84c",
+              color: connecting ? "rgba(0,0,0,0.5)" : "#0a0a1a",
+              border: "none",
+              padding: "11px 24px",
+              borderRadius: "8px",
+              fontFamily: "Cinzel, serif",
+              fontSize: "13px",
+              letterSpacing: "0.08em",
+              cursor: connecting ? "not-allowed" : "pointer",
+              fontWeight: 600,
+              whiteSpace: "nowrap" as const,
+            }}
+          >
+            {connecting ? `Čekám na ${connectingPlatform}...` : "⬡ Připojit síť"}
+          </button>
+        </div>
+        {connecting && (
+          <p style={{ fontSize: "12px", color: "rgba(201,168,76,0.6)", fontFamily: "'DM Sans', sans-serif", marginTop: "12px" }}>
+            Dokončete přihlášení v popupu. Automaticky se propojí po autorizaci.
+          </p>
+        )}
+      </div>
+
+      {/* Seznam připojených účtů */}
+      <div style={S.card}>
+        <div style={S.sectionTitle}>PŘIPOJENÉ ÚČTY ({accounts.length})</div>
+        {loading ? (
+          <p style={{ color: "rgba(255,255,255,0.3)", fontFamily: "'DM Sans', sans-serif", fontSize: "13px" }}>Načítám...</p>
+        ) : accounts.length === 0 ? (
+          <p style={{ color: "rgba(255,255,255,0.3)", fontFamily: "'DM Sans', sans-serif", fontSize: "13px" }}>Žádné připojené účty. Klikni na „Připojit síť" výše.</p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column" as const, gap: "10px" }}>
+            {accounts.map(acct => (
+              <div
+                key={acct.id}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "14px",
+                  background: "#0f1117",
+                  border: "1px solid rgba(255,255,255,0.06)",
+                  borderRadius: "10px",
+                  padding: "14px 16px",
+                }}
+              >
+                <span style={{ fontSize: "20px", width: "28px", textAlign: "center" as const }}>{PLATFORM_ICON[acct.platform] ?? "⬡"}</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontFamily: "Cinzel, serif", color: "#c9a84c", fontSize: "13px" }}>
+                    {acct.platform.charAt(0).toUpperCase() + acct.platform.slice(1)}
+                  </div>
+                  <div style={{ fontFamily: "'DM Sans', sans-serif", color: "rgba(255,255,255,0.45)", fontSize: "12px", marginTop: "2px" }}>
+                    @{acct.account_name ?? acct.zernio_account_id}
+                  </div>
+                </div>
+                <span style={{
+                  padding: "3px 10px",
+                  borderRadius: "999px",
+                  fontSize: "10px",
+                  fontFamily: "'DM Sans', sans-serif",
+                  letterSpacing: "0.05em",
+                  background: acct.is_active ? "rgba(0,255,136,0.1)" : "rgba(255,255,255,0.06)",
+                  color: acct.is_active ? "#00FF88" : "rgba(255,255,255,0.35)",
+                  border: `1px solid ${acct.is_active ? "rgba(0,255,136,0.2)" : "rgba(255,255,255,0.08)"}`,
+                  whiteSpace: "nowrap" as const,
+                }}>
+                  {acct.is_active ? "Aktivní" : "Neaktivní"}
+                </span>
+                <button
+                  onClick={() => handleDisconnect(acct)}
+                  disabled={disconnecting === acct.id}
+                  style={{
+                    background: "transparent",
+                    border: "1px solid rgba(255,100,100,0.2)",
+                    color: "rgba(255,100,100,0.6)",
+                    padding: "6px 14px",
+                    borderRadius: "6px",
+                    fontFamily: "'DM Sans', sans-serif",
+                    fontSize: "11px",
+                    cursor: disconnecting === acct.id ? "not-allowed" : "pointer",
+                    whiteSpace: "nowrap" as const,
+                  }}
+                >
+                  {disconnecting === acct.id ? "..." : "Odpojit"}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
 export default function AdminPage() {
   const router = useRouter();
   const [activeSection, setActiveSection] = useState<Section>("dashboard");
@@ -532,6 +772,7 @@ export default function AdminPage() {
           {activeSection === "generator" && <GeneratorSection />}
           {activeSection === "dashboard" && <DashboardSection />}
           {activeSection === "stories" && <StoriesSection />}
+          {activeSection === "networks" && <SocialNetworksSection />}
           {activeSection === "users" && <PlaceholderSection label="Uživatelé" />}
           {activeSection === "settings" && <PlaceholderSection label="Nastavení" />}
         </div>
