@@ -27,6 +27,20 @@ export async function middleware(request: NextRequest) {
   const { data: { session } } = await supabase.auth.getSession()
   const { pathname } = request.nextUrl
 
+  if (pathname === '/admin' || pathname.startsWith('/admin/')) {
+    if (!session) {
+      return NextResponse.redirect(new URL('/prihlaseni', request.url))
+    }
+    const adminEmails = (process.env.ADMIN_EMAILS || '')
+      .split(',')
+      .map(e => e.trim().toLowerCase())
+      .filter(Boolean)
+    const email = session.user.email?.toLowerCase()
+    if (!email || !adminEmails.includes(email)) {
+      return NextResponse.redirect(new URL('/uvnitr', request.url))
+    }
+  }
+
   if (pathname.startsWith('/uvnitr') && !session) {
     return NextResponse.redirect(new URL('/prihlaseni', request.url))
   }
