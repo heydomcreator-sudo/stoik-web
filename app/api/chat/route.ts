@@ -2,7 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
-import { getUserSubscriptionStatus } from "@/lib/subscription";
+import { getUserSubscriptionStatusServer } from "@/lib/subscription-server";
 
 export const maxDuration = 30;
 
@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const status = await getUserSubscriptionStatus(session.user.id, session.user.created_at);
+    const status = await getUserSubscriptionStatusServer(supabase, session.user.id, session.user.created_at);
     if (!status.isActive) {
       return NextResponse.json({ error: "Předplatné neaktivní" }, { status: 403 });
     }
