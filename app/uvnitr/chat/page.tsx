@@ -32,6 +32,7 @@ function ChatContent() {
   const [showPhilPicker, setShowPhilPicker] = useState(false);
   const [subscriptionStatus, setSubscriptionStatus] = useState<SubscriptionStatus | null>(null);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [portalLoading, setPortalLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const phil = PHILOSOPHERS[philosopher];
@@ -67,6 +68,19 @@ function ChatContent() {
       console.error('Checkout error')
     } finally {
       setCheckoutLoading(false)
+    }
+  }
+
+  const handleManageSubscription = async () => {
+    setPortalLoading(true)
+    try {
+      const res = await fetch('/api/stripe/portal', { method: 'POST' })
+      const { url } = await res.json()
+      if (url) window.location.href = url
+    } catch {
+      console.error('Portal error')
+    } finally {
+      setPortalLoading(false)
     }
   }
 
@@ -269,6 +283,17 @@ function ChatContent() {
         <p className="text-center text-xs mt-2" style={{ fontFamily: "'DM Sans', sans-serif", color: subscriptionStatus?.isActive ? "rgba(255,255,255,0.35)" : "#ff6b6b" }}>
           {statusLabel}
         </p>
+        {subscriptionStatus?.isActive && !subscriptionStatus?.isTrial && (
+          <p className="text-center mt-1">
+            <button
+              onClick={handleManageSubscription}
+              disabled={portalLoading}
+              style={{ fontFamily: "'DM Sans', sans-serif", fontSize: "12px", color: "rgba(255,215,0,0.6)", background: "none", border: "none", cursor: portalLoading ? "not-allowed" : "pointer", textDecoration: "underline" }}
+            >
+              {portalLoading ? "Přesměrování..." : "Spravovat předplatné"}
+            </button>
+          </p>
+        )}
       </div>
 
       {/* Philosopher picker */}
