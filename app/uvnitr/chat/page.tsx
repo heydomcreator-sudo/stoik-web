@@ -325,7 +325,7 @@ function ChatContent() {
 
             {/* Price */}
             <div style={{ marginBottom: "24px" }}>
-              <span style={{ fontFamily: "Cinzel, serif", color: "#fff", fontSize: "36px", fontWeight: 700 }}>90 Kč</span>
+              <span style={{ fontFamily: "Cinzel, serif", color: "#fff", fontSize: "36px", fontWeight: 700 }}>150 Kč</span>
               <span style={{ fontFamily: "'DM Sans', sans-serif", color: "rgba(255,255,255,0.4)", fontSize: "13px", marginLeft: "6px" }}>/měsíc</span>
             </div>
 
@@ -359,7 +359,7 @@ function ChatContent() {
                 transition: "all 0.2s",
               }}
             >
-              {checkoutLoading ? "Přesměrování..." : "PŘEDPLATIT — 90 KČ/MĚSÍC"}
+              {checkoutLoading ? "Přesměrování..." : "PŘEDPLATIT — 150 KČ/MĚSÍC"}
             </button>
 
             {/* Dismiss only if still in trial */}

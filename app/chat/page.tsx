@@ -226,7 +226,7 @@ export default function ChatPage() {
               Odemkni přístup
             </h2>
             <p className="text-sm opacity-70 mb-6 leading-relaxed" style={{ fontFamily: "'DM Sans', sans-serif" }}>
-              Využil jsi 3 volné zprávy. Pokračuj v rozhovoru s Epiktétem za 199 Kč/měsíc.
+              Využil jsi 3 volné zprávy. Pokračuj v rozhovoru s Epiktétem za 150 Kč/měsíc.
               <br />
               <span className="text-green-400">7 dní zdarma.</span>
             </p>
