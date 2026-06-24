@@ -3,20 +3,18 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
-type Section = "dashboard" | "generator" | "users" | "settings" | "stories" | "networks";
+type Section = "dashboard" | "generator" | "users" | "settings" | "stories";
 
 const NAV: { id: Section; label: string; icon: string }[] = [
   { id: "dashboard", label: "Dashboard", icon: "▦" },
   { id: "generator", label: "Generátor obsahu", icon: "✦" },
   { id: "stories", label: "Příběhy", icon: "◈" },
-  { id: "networks", label: "Připojené sítě", icon: "⬡" },
   { id: "users", label: "Uživatelé", icon: "◎" },
   { id: "settings", label: "Nastavení", icon: "◇" },
 ];
 
 const PHILOSOPHERS = ["Epiktétos", "Marcus Aurelius", "Seneca"];
 const TOPICS = ["Klid", "Kontrola", "Čas", "Vztahy", "Práce", "Smrt"];
-const STORY_TOPICS = ["Memento mori", "Amor fati", "Dichotomie kontroly", "Virtue", "Klid v chaosu"];
 const LENGTHS = [
   { label: "Krátký (~10 slov)", value: "short" },
   { label: "Střední (~20 slov)", value: "medium" },
@@ -64,7 +62,7 @@ const S = {
   },
 };
 
-// Sdílený typ a ikonky — používá PublishModal i SocialNetworksSection
+// Sdílený typ a ikonky — používá PublishModal (čte připojené účty z DB)
 type SocialAccount = {
   id: string;
   platform: string;
@@ -73,18 +71,6 @@ type SocialAccount = {
   is_active: boolean;
   created_at: string;
 };
-
-const PLATFORMS = [
-  { value: "instagram", label: "Instagram" },
-  { value: "tiktok", label: "TikTok" },
-  { value: "facebook", label: "Facebook" },
-  { value: "youtube", label: "YouTube" },
-  { value: "twitter", label: "X (Twitter)" },
-  { value: "bluesky", label: "Bluesky" },
-  { value: "linkedin", label: "LinkedIn" },
-  { value: "pinterest", label: "Pinterest" },
-  { value: "threads", label: "Threads" },
-];
 
 const PLATFORM_ICON: Record<string, string> = {
   instagram: "📷", tiktok: "🎵", facebook: "f", youtube: "▶",
@@ -224,7 +210,7 @@ function PublishModal({ quote, philosopher, onClose }: { quote: string; philosop
           {loadingAccounts ? (
             <p style={{ color: "rgba(255,255,255,0.3)", fontSize: "13px", fontFamily: "'DM Sans', sans-serif" }}>Načítám účty...</p>
           ) : accounts.length === 0 ? (
-            <p style={{ color: "rgba(255,100,100,0.6)", fontSize: "13px", fontFamily: "'DM Sans', sans-serif" }}>Žádné připojené účty. Nejprve připoj sítě v sekci „Připojené sítě".</p>
+            <p style={{ color: "rgba(255,100,100,0.6)", fontSize: "13px", fontFamily: "'DM Sans', sans-serif" }}>Žádné připojené účty. Sociální sítě se spravují v samostatné aplikaci.</p>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
               {accounts.map(acct => {
@@ -423,227 +409,35 @@ function GeneratorSection() {
 
 // ─── Příběhy ──────────────────────────────────────────────────────────────────
 
-type AdminStory = {
-  id: string;
-  title: string;
-  description: string | null;
-  topic: string | null;
-  duration_minutes: number | null;
-  price_czk: number;
-  stripe_price_id: string | null;
-  trailer_youtube_id: string | null;
-  full_youtube_id: string | null;
-  thumbnail_url: string | null;
-  published: boolean;
-  created_at: string;
-};
-
-const DEFAULT_FORM = { title: "", description: "", topic: "Memento mori", duration_minutes: "", price_czk: "49", stripe_price_id: "", trailer_youtube_id: "", full_youtube_id: "", thumbnail_url: "", published: false };
+// Adresa samostatné aplikace video-studio (Vite app, vlastní deployment).
+// Přepiš přes NEXT_PUBLIC_VIDEO_STUDIO_URL (např. nasazená Vercel doména).
+const VIDEO_STUDIO_URL = process.env.NEXT_PUBLIC_VIDEO_STUDIO_URL || "http://localhost:3000";
 
 function StoriesSection() {
-  const [stories, setStories] = useState<AdminStory[]>([]);
-  const [listLoading, setListLoading] = useState(true);
-  const [formLoading, setFormLoading] = useState(false);
-  const [editId, setEditId] = useState<string | null>(null);
-  const [form, setForm] = useState(DEFAULT_FORM);
-  const [toast, setToast] = useState("");
-
-  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(""), 3500); };
-
-  const fetchStories = async () => {
-    setListLoading(true);
-    const { data } = await supabase.from("stories").select("*").order("created_at", { ascending: false });
-    setStories((data as AdminStory[]) || []);
-    setListLoading(false);
-  };
-
-  useEffect(() => { fetchStories(); }, []);
-
-  const handleEdit = (story: AdminStory) => {
-    setEditId(story.id);
-    setForm({
-      title: story.title,
-      description: story.description || "",
-      topic: story.topic || "Memento mori",
-      duration_minutes: story.duration_minutes?.toString() || "",
-      price_czk: story.price_czk.toString(),
-      stripe_price_id: story.stripe_price_id || "",
-      trailer_youtube_id: story.trailer_youtube_id || "",
-      full_youtube_id: story.full_youtube_id || "",
-      thumbnail_url: story.thumbnail_url || "",
-      published: story.published,
-    });
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
-
-  const handleCancelEdit = () => { setEditId(null); setForm(DEFAULT_FORM); };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!form.title.trim()) return showToast("Název je povinný.");
-    setFormLoading(true);
-
-    const payload = {
-      title: form.title.trim(),
-      description: form.description.trim() || null,
-      topic: form.topic,
-      duration_minutes: form.duration_minutes ? parseInt(form.duration_minutes) : null,
-      price_czk: parseInt(form.price_czk) || 49,
-      stripe_price_id: form.stripe_price_id.trim() || null,
-      trailer_youtube_id: form.trailer_youtube_id.trim() || null,
-      full_youtube_id: form.full_youtube_id.trim() || null,
-      thumbnail_url: form.thumbnail_url.trim() || null,
-      published: form.published,
-    };
-
-    const { error } = editId
-      ? await supabase.from("stories").update(payload).eq("id", editId)
-      : await supabase.from("stories").insert(payload);
-
-    if (error) {
-      showToast("Chyba: " + error.message);
-    } else {
-      showToast(editId ? "Příběh aktualizován!" : "Příběh přidán!");
-      setEditId(null);
-      setForm(DEFAULT_FORM);
-      fetchStories();
-    }
-    setFormLoading(false);
-  };
-
-  const handleDelete = async (id: string, title: string) => {
-    if (!confirm(`Smazat příběh "${title}"?`)) return;
-    const { error } = await supabase.from("stories").delete().eq("id", id);
-    if (error) showToast("Chyba při mazání: " + error.message);
-    else { showToast("Příběh smazán."); fetchStories(); }
-  };
-
-  const field = (key: keyof typeof form) => ({
-    value: form[key] as string,
-    onChange: (v: string) => setForm(f => ({ ...f, [key]: v })),
-  });
-
   return (
-    <>
-      {toast && (
-        <div style={{ position: "fixed", top: "20px", left: "50%", transform: "translateX(-50%)", zIndex: 100, background: "#c9a84c", color: "#0a0a1a", padding: "10px 24px", borderRadius: "999px", fontFamily: "'DM Sans', sans-serif", fontSize: "13px", fontWeight: 600 }}>
-          {toast}
+    <div style={S.card}>
+      <div style={S.sectionTitle}>VIDEO STUDIO</div>
+      <div style={{ display: "flex", gap: "20px", alignItems: "center", flexWrap: "wrap" }}>
+        <div style={{ fontSize: "44px", lineHeight: 1, flexShrink: 0 }}>🎬</div>
+        <div style={{ flex: 1, minWidth: "220px" }}>
+          <p style={{ fontFamily: "Cinzel, serif", color: "#c9a84c", fontSize: "15px", letterSpacing: "0.08em", margin: "0 0 6px" }}>
+            Video studio
+          </p>
+          <p style={{ fontFamily: "'DM Sans', sans-serif", color: "rgba(255,255,255,0.5)", fontSize: "13px", lineHeight: 1.6, margin: 0 }}>
+            Tvorba videí a carouselů — generování textů, obrázků, hlasu a render MP4.
+            Otevře se v nové záložce.
+          </p>
         </div>
-      )}
-
-      <div style={S.card}>
-        <div style={S.sectionTitle}>{editId ? "UPRAVIT PŘÍBĚH" : "PŘIDAT PŘÍBĚH"}</div>
-        <form onSubmit={handleSubmit}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px", marginBottom: "16px" }}>
-            <TextField label="Název *" {...field("title")} placeholder="Název příběhu" />
-            <SelectField label="Téma" value={form.topic} onChange={v => setForm(f => ({ ...f, topic: v }))} options={STORY_TOPICS} />
-            <TextField label="Délka (minuty)" {...field("duration_minutes")} placeholder="15" type="number" />
-            <TextField label="Cena (Kč)" {...field("price_czk")} placeholder="49" type="number" />
-          </div>
-
-          <div style={{ marginBottom: "16px" }}>
-            <label style={S.label}>Popis</label>
-            <textarea
-              value={form.description}
-              onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-              placeholder="Krátký popis příběhu..."
-              rows={3}
-              style={{ ...S.input, resize: "vertical" as const, cursor: "text", appearance: "auto" as const }}
-            />
-          </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px", marginBottom: "16px" }}>
-            <TextField label="Trailer YouTube ID" {...field("trailer_youtube_id")} placeholder="dQw4w9WgXcQ" />
-            <TextField label="Full video YouTube ID" {...field("full_youtube_id")} placeholder="dQw4w9WgXcQ" />
-            <TextField label="Thumbnail URL" {...field("thumbnail_url")} placeholder="https://..." />
-            <TextField label="Stripe Price ID (volitelné)" {...field("stripe_price_id")} placeholder="price_xxx" />
-          </div>
-
-          <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "20px" }}>
-            <input
-              type="checkbox"
-              id="published"
-              checked={form.published}
-              onChange={e => setForm(f => ({ ...f, published: e.target.checked }))}
-              style={{ width: "16px", height: "16px", cursor: "pointer", accentColor: "#c9a84c" }}
-            />
-            <label htmlFor="published" style={{ ...S.label, marginBottom: 0, cursor: "pointer" }}>Publikovaný (viditelný uživatelům)</label>
-          </div>
-
-          <div style={{ display: "flex", gap: "10px" }}>
-            <button
-              type="submit"
-              disabled={formLoading}
-              style={{ background: formLoading ? "rgba(201,168,76,0.3)" : "#c9a84c", color: formLoading ? "rgba(0,0,0,0.5)" : "#0a0a1a", border: "none", padding: "12px 24px", borderRadius: "8px", fontFamily: "Cinzel, serif", fontSize: "13px", letterSpacing: "0.08em", cursor: formLoading ? "not-allowed" : "pointer", fontWeight: 600 }}
-            >
-              {formLoading ? "Ukládám..." : editId ? "Uložit změny" : "✦ Přidat příběh"}
-            </button>
-            {editId && (
-              <button
-                type="button"
-                onClick={handleCancelEdit}
-                style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.4)", padding: "12px 24px", borderRadius: "8px", fontFamily: "'DM Sans', sans-serif", fontSize: "13px", cursor: "pointer" }}
-              >
-                Zrušit
-              </button>
-            )}
-          </div>
-        </form>
+        <a
+          href={VIDEO_STUDIO_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ background: "#c9a84c", color: "#0a0a1a", border: "none", padding: "12px 24px", borderRadius: "8px", fontFamily: "Cinzel, serif", fontSize: "13px", letterSpacing: "0.08em", fontWeight: 600, textDecoration: "none", whiteSpace: "nowrap" as const, flexShrink: 0 }}
+        >
+          Otevřít studio →
+        </a>
       </div>
-
-      <div style={S.card}>
-        <div style={S.sectionTitle}>SEZNAM PŘÍBĚHŮ ({stories.length})</div>
-        {listLoading ? (
-          <p style={{ color: "rgba(255,255,255,0.3)", fontFamily: "'DM Sans', sans-serif", fontSize: "13px" }}>Načítám...</p>
-        ) : stories.length === 0 ? (
-          <p style={{ color: "rgba(255,255,255,0.3)", fontFamily: "'DM Sans', sans-serif", fontSize: "13px" }}>Zatím žádné příběhy.</p>
-        ) : (
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse" as const }}>
-              <thead>
-                <tr>
-                  {["Název", "Téma", "Cena", "Status", "Akce"].map(h => (
-                    <th key={h} style={{ textAlign: "left" as const, padding: "8px 12px", fontSize: "10px", letterSpacing: "0.1em", color: "rgba(255,255,255,0.3)", fontFamily: "'DM Sans', sans-serif", borderBottom: "1px solid rgba(255,255,255,0.06)", textTransform: "uppercase" as const }}>
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {stories.map(story => (
-                  <tr key={story.id} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
-                    <td style={{ padding: "12px", fontFamily: "Cinzel, serif", color: "#c9a84c", fontSize: "13px" }}>{story.title}</td>
-                    <td style={{ padding: "12px", fontFamily: "'DM Sans', sans-serif", color: "rgba(255,255,255,0.45)", fontSize: "12px" }}>{story.topic || "—"}</td>
-                    <td style={{ padding: "12px", fontFamily: "Cinzel, serif", color: "#c9a84c", fontSize: "13px", whiteSpace: "nowrap" as const }}>{story.price_czk} Kč</td>
-                    <td style={{ padding: "12px" }}>
-                      <span style={{ padding: "3px 10px", borderRadius: "999px", fontSize: "10px", fontFamily: "'DM Sans', sans-serif", letterSpacing: "0.05em", background: story.published ? "rgba(0,255,136,0.1)" : "rgba(255,255,255,0.06)", color: story.published ? "#00FF88" : "rgba(255,255,255,0.35)", border: `1px solid ${story.published ? "rgba(0,255,136,0.2)" : "rgba(255,255,255,0.08)"}` }}>
-                        {story.published ? "Publikováno" : "Skrytý"}
-                      </span>
-                    </td>
-                    <td style={{ padding: "12px" }}>
-                      <div style={{ display: "flex", gap: "8px" }}>
-                        <button
-                          onClick={() => handleEdit(story)}
-                          style={{ background: "transparent", border: "1px solid rgba(201,168,76,0.3)", color: "#c9a84c", padding: "5px 12px", borderRadius: "6px", fontFamily: "'DM Sans', sans-serif", fontSize: "11px", cursor: "pointer" }}
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => handleDelete(story.id, story.title)}
-                          style={{ background: "transparent", border: "1px solid rgba(255,100,100,0.2)", color: "rgba(255,100,100,0.6)", padding: "5px 12px", borderRadius: "6px", fontFamily: "'DM Sans', sans-serif", fontSize: "11px", cursor: "pointer" }}
-                        >
-                          Smazat
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-    </>
+    </div>
   );
 }
 
@@ -701,158 +495,141 @@ function PlaceholderSection({ label }: { label: string }) {
   );
 }
 
-// ─── Připojené sítě ───────────────────────────────────────────────────────────
+// ─── Uživatelé ────────────────────────────────────────────────────────────────
 
-function SocialNetworksSection() {
-  const [accounts, setAccounts] = useState<SocialAccount[]>([]);
+type AdminUser = {
+  id: string;
+  email: string;
+  name: string;
+  createdAt: string;
+  lastSignInAt: string | null;
+  subscription: { label: string; state: "active" | "trial" | "expired"; status: string; daysLeft: number };
+};
+
+type UsersStats = { total: number; paying: number; trial: number; expired: number };
+
+const SUB_BADGE: Record<AdminUser["subscription"]["state"], { bg: string; color: string; border: string }> = {
+  active:  { bg: "rgba(0,255,136,0.1)",   color: "#00FF88",            border: "rgba(0,255,136,0.2)" },
+  trial:   { bg: "rgba(201,168,76,0.1)",  color: "#c9a84c",            border: "rgba(201,168,76,0.25)" },
+  expired: { bg: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.35)", border: "rgba(255,255,255,0.08)" },
+};
+
+function formatDate(iso: string | null): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleDateString("cs-CZ", { day: "numeric", month: "numeric", year: "numeric" });
+}
+
+function timeAgo(iso: string | null): string {
+  if (!iso) return "Nikdy";
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return "Právě teď";
+  if (mins < 60) return `Před ${mins} min`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `Před ${hours} h`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `Před ${days} dny`;
+  return formatDate(iso);
+}
+
+function UsersSection() {
+  const [users, setUsers] = useState<AdminUser[]>([]);
+  const [stats, setStats] = useState<UsersStats | null>(null);
   const [loading, setLoading] = useState(true);
-  const [platform, setPlatform] = useState("instagram");
-  const [connecting, setConnecting] = useState(false);
-  const [connectingPlatform, setConnectingPlatform] = useState("");
-  const [disconnecting, setDisconnecting] = useState<string | null>(null);
-  const [toast, setToast] = useState("");
-  const [popup, setPopup] = useState<Window | null>(null);
+  const [error, setError] = useState("");
 
-  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(""), 3500); };
-
-  const fetchAccounts = async () => {
-    setLoading(true);
-    const { data } = await supabase.from("social_accounts").select("*").order("created_at", { ascending: false });
-    setAccounts((data as SocialAccount[]) || []);
+  const fetchUsers = async () => {
+    setLoading(true); setError("");
+    try {
+      const res = await fetch("/api/admin/users", { credentials: "include" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      setUsers(data.users as AdminUser[]);
+      setStats(data.stats as UsersStats);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Nepodařilo se načíst uživatele.");
+    }
     setLoading(false);
   };
 
-  useEffect(() => { fetchAccounts(); }, []);
+  useEffect(() => { fetchUsers(); }, []);
 
-  useEffect(() => {
-    if (!connecting || !connectingPlatform) return;
-
-    const interval = setInterval(async () => {
-      try {
-        const res = await fetch(`/api/zernio-poll?platform=${connectingPlatform}`, { credentials: "include" });
-        if (!res.ok) return;
-        const data = await res.json();
-        if (data.connected) {
-          clearInterval(interval);
-          setConnecting(false);
-          setConnectingPlatform("");
-          popup?.close();
-          setPopup(null);
-          showToast(`Připojeno: @${data.username} (${data.platform})`);
-          fetchAccounts();
-        }
-      } catch { /* pokračuj v pollingu */ }
-    }, 3000);
-
-    return () => clearInterval(interval);
-  }, [connecting, connectingPlatform, popup]);
-
-  const handleConnect = async () => {
-    setConnecting(true);
-    setConnectingPlatform(platform);
-    try {
-      const res = await fetch(`/api/zernio-connect?platform=${platform}`, { credentials: "include" });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || `HTTP ${res.status}`);
-      }
-      const { authUrl } = await res.json();
-      const w = window.open(authUrl, "zernio-oauth", "width=520,height=680,scrollbars=yes,resizable=yes");
-      setPopup(w);
-
-      const checkClosed = setInterval(() => {
-        if (w?.closed) {
-          clearInterval(checkClosed);
-          setConnecting(false);
-          setConnectingPlatform("");
-          setPopup(null);
-        }
-      }, 1000);
-    } catch (err) {
-      setConnecting(false);
-      setConnectingPlatform("");
-      showToast(err instanceof Error ? err.message : "Připojení selhalo.");
-    }
-  };
-
-  const handleDisconnect = async (acct: SocialAccount) => {
-    if (!confirm(`Odpojit @${acct.account_name ?? acct.zernio_account_id} (${acct.platform})?`)) return;
-    setDisconnecting(acct.id);
-    try {
-      const res = await fetch("/api/zernio-disconnect", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ zernio_account_id: acct.zernio_account_id }),
-        credentials: "include",
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || `HTTP ${res.status}`);
-      }
-      showToast(`Odpojeno: ${acct.platform}`);
-      fetchAccounts();
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : "Odpojení selhalo.");
-    }
-    setDisconnecting(null);
-  };
+  const statCards = [
+    { label: "Celkem", value: stats?.total },
+    { label: "Platící", value: stats?.paying },
+    { label: "Trial", value: stats?.trial },
+    { label: "Vypršelo", value: stats?.expired },
+  ];
 
   return (
     <>
-      {toast && (
-        <div style={{ position: "fixed", top: "20px", left: "50%", transform: "translateX(-50%)", zIndex: 100, background: "#c9a84c", color: "#0a0a1a", padding: "10px 24px", borderRadius: "999px", fontFamily: "'DM Sans', sans-serif", fontSize: "13px", fontWeight: 600 }}>
-          {toast}
-        </div>
-      )}
-
-      <div style={S.card}>
-        <div style={S.sectionTitle}>PŘIPOJIT SOCIÁLNÍ SÍŤ</div>
-        <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "flex-end" }}>
-          <div style={{ flex: 1, minWidth: "180px" }}>
-            <SelectField label="Platforma" value={platform} onChange={setPlatform} options={PLATFORMS} />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "16px", marginBottom: "24px" }}>
+        {statCards.map(s => (
+          <div key={s.label} style={{ ...S.card, marginBottom: 0, textAlign: "center" as const }}>
+            <div style={{ fontSize: "32px", fontFamily: "Cinzel, serif", color: "#c9a84c", marginBottom: "4px", lineHeight: 1 }}>
+              {loading ? "..." : s.value ?? "—"}
+            </div>
+            <div style={{ fontSize: "12px", color: "rgba(255,255,255,0.5)", fontFamily: "'DM Sans', sans-serif" }}>{s.label}</div>
           </div>
-          <button
-            onClick={handleConnect}
-            disabled={connecting}
-            style={{ background: connecting ? "rgba(201,168,76,0.3)" : "#c9a84c", color: connecting ? "rgba(0,0,0,0.5)" : "#0a0a1a", border: "none", padding: "11px 24px", borderRadius: "8px", fontFamily: "Cinzel, serif", fontSize: "13px", letterSpacing: "0.08em", cursor: connecting ? "not-allowed" : "pointer", fontWeight: 600, whiteSpace: "nowrap" as const }}
-          >
-            {connecting ? `Čekám na ${connectingPlatform}...` : "⬡ Připojit síť"}
-          </button>
-        </div>
-        {connecting && (
-          <p style={{ fontSize: "12px", color: "rgba(201,168,76,0.6)", fontFamily: "'DM Sans', sans-serif", marginTop: "12px" }}>
-            Dokončete přihlášení v popupu. Automaticky se propojí po autorizaci.
-          </p>
-        )}
+        ))}
       </div>
 
       <div style={S.card}>
-        <div style={S.sectionTitle}>PŘIPOJENÉ ÚČTY ({accounts.length})</div>
-        {loading ? (
-          <p style={{ color: "rgba(255,255,255,0.3)", fontFamily: "'DM Sans', sans-serif", fontSize: "13px" }}>Načítám...</p>
-        ) : accounts.length === 0 ? (
-          <p style={{ color: "rgba(255,255,255,0.3)", fontFamily: "'DM Sans', sans-serif", fontSize: "13px" }}>Žádné připojené účty. Klikni na „Připojit síť" výše.</p>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px", paddingBottom: "12px", borderBottom: "1px solid rgba(201,168,76,0.1)" }}>
+          <div style={{ fontFamily: "Cinzel, serif", color: "#c9a84c", fontSize: "13px", letterSpacing: "0.12em" }}>
+            SEZNAM UŽIVATELŮ{users.length > 0 ? ` (${users.length})` : ""}
+          </div>
+          <button
+            onClick={fetchUsers}
+            disabled={loading}
+            style={{ background: "transparent", border: "1px solid rgba(201,168,76,0.3)", color: "#c9a84c", padding: "6px 14px", borderRadius: "6px", fontFamily: "'DM Sans', sans-serif", fontSize: "12px", cursor: loading ? "not-allowed" : "pointer" }}
+          >
+            {loading ? "Načítám..." : "↻ Obnovit"}
+          </button>
+        </div>
+
+        {error ? (
+          <p style={{ color: "#ff6b6b", fontFamily: "'DM Sans', sans-serif", fontSize: "13px" }}>{error}</p>
+        ) : loading ? (
+          <p style={{ color: "rgba(255,255,255,0.3)", fontFamily: "'DM Sans', sans-serif", fontSize: "13px" }}>Načítám uživatele...</p>
+        ) : users.length === 0 ? (
+          <p style={{ color: "rgba(255,255,255,0.3)", fontFamily: "'DM Sans', sans-serif", fontSize: "13px" }}>Zatím žádní uživatelé.</p>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column" as const, gap: "10px" }}>
-            {accounts.map(acct => (
-              <div key={acct.id} style={{ display: "flex", alignItems: "center", gap: "14px", background: "#0f1117", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "10px", padding: "14px 16px" }}>
-                <span style={{ fontSize: "20px", width: "28px", textAlign: "center" as const }}>{PLATFORM_ICON[acct.platform] ?? "⬡"}</span>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontFamily: "Cinzel, serif", color: "#c9a84c", fontSize: "13px" }}>{acct.platform.charAt(0).toUpperCase() + acct.platform.slice(1)}</div>
-                  <div style={{ fontFamily: "'DM Sans', sans-serif", color: "rgba(255,255,255,0.45)", fontSize: "12px", marginTop: "2px" }}>@{acct.account_name ?? acct.zernio_account_id}</div>
-                </div>
-                <span style={{ padding: "3px 10px", borderRadius: "999px", fontSize: "10px", fontFamily: "'DM Sans', sans-serif", letterSpacing: "0.05em", background: acct.is_active ? "rgba(0,255,136,0.1)" : "rgba(255,255,255,0.06)", color: acct.is_active ? "#00FF88" : "rgba(255,255,255,0.35)", border: `1px solid ${acct.is_active ? "rgba(0,255,136,0.2)" : "rgba(255,255,255,0.08)"}`, whiteSpace: "nowrap" as const }}>
-                  {acct.is_active ? "Aktivní" : "Neaktivní"}
-                </span>
-                <button
-                  onClick={() => handleDisconnect(acct)}
-                  disabled={disconnecting === acct.id}
-                  style={{ background: "transparent", border: "1px solid rgba(255,100,100,0.2)", color: "rgba(255,100,100,0.6)", padding: "6px 14px", borderRadius: "6px", fontFamily: "'DM Sans', sans-serif", fontSize: "11px", cursor: disconnecting === acct.id ? "not-allowed" : "pointer", whiteSpace: "nowrap" as const }}
-                >
-                  {disconnecting === acct.id ? "..." : "Odpojit"}
-                </button>
-              </div>
-            ))}
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" as const }}>
+              <thead>
+                <tr>
+                  {["Uživatel", "Registrace", "Poslední aktivita", "Předplatné"].map(h => (
+                    <th key={h} style={{ textAlign: "left" as const, padding: "8px 12px", fontSize: "10px", letterSpacing: "0.1em", color: "rgba(255,255,255,0.3)", fontFamily: "'DM Sans', sans-serif", borderBottom: "1px solid rgba(255,255,255,0.06)", textTransform: "uppercase" as const }}>
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {users.map(u => {
+                  const badge = SUB_BADGE[u.subscription.state];
+                  return (
+                    <tr key={u.id} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                      <td style={{ padding: "12px" }}>
+                        <div style={{ fontFamily: "Cinzel, serif", color: "#c9a84c", fontSize: "13px" }}>{u.name}</div>
+                        <div style={{ fontFamily: "'DM Sans', sans-serif", color: "rgba(255,255,255,0.4)", fontSize: "12px", marginTop: "2px" }}>{u.email}</div>
+                      </td>
+                      <td style={{ padding: "12px", fontFamily: "'DM Sans', sans-serif", color: "rgba(255,255,255,0.55)", fontSize: "12px", whiteSpace: "nowrap" as const }}>{formatDate(u.createdAt)}</td>
+                      <td style={{ padding: "12px", fontFamily: "'DM Sans', sans-serif", color: "rgba(255,255,255,0.55)", fontSize: "12px", whiteSpace: "nowrap" as const }}>{timeAgo(u.lastSignInAt)}</td>
+                      <td style={{ padding: "12px" }}>
+                        <span style={{ padding: "3px 10px", borderRadius: "999px", fontSize: "10px", fontFamily: "'DM Sans', sans-serif", letterSpacing: "0.05em", background: badge.bg, color: badge.color, border: `1px solid ${badge.border}`, whiteSpace: "nowrap" as const }}>
+                          {u.subscription.label}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
@@ -925,8 +702,7 @@ export default function AdminPage() {
           {activeSection === "generator" && <GeneratorSection />}
           {activeSection === "dashboard" && <DashboardSection />}
           {activeSection === "stories" && <StoriesSection />}
-          {activeSection === "networks" && <SocialNetworksSection />}
-          {activeSection === "users" && <PlaceholderSection label="Uživatelé" />}
+          {activeSection === "users" && <UsersSection />}
           {activeSection === "settings" && <PlaceholderSection label="Nastavení" />}
         </div>
       </main>

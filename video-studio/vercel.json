@@ -1,0 +1,10 @@
+{
+  "rewrites": [
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
+  ],
+  "functions": {
+    "api/generate/index.js": { "maxDuration": 60 },
+    "api/generate/render.js": { "maxDuration": 300, "includeFiles": "public/fonts/**" },
+    "api/publish/download.js": { "maxDuration": 300, "includeFiles": "public/fonts/**" }
+  }
+}
