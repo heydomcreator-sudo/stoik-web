@@ -30,10 +30,10 @@ export default function Footer() {
 
           {/* Links */}
           <div className="flex gap-6 text-xs opacity-50 uppercase tracking-wider" style={{ fontFamily: "'DM Sans', sans-serif" }}>
-            <Link href="/chat" className="hover:opacity-100 transition-opacity" style={{ color: "#FFD700" }}>
+            <Link href="/uvnitr/chat" className="hover:opacity-100 transition-opacity" style={{ color: "#FFD700" }}>
               Chat
             </Link>
-            <Link href="/dychani" className="hover:opacity-100 transition-opacity" style={{ color: "#FFD700" }}>
+            <Link href="/uvnitr/dychani" className="hover:opacity-100 transition-opacity" style={{ color: "#FFD700" }}>
               Dýchání
             </Link>
             <a href="#pricing" className="hover:opacity-100 transition-opacity" style={{ color: "#FFD700" }}>
