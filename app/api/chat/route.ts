@@ -1,5 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
+import { getUserSubscriptionStatus } from "@/lib/subscription";
 
 export const maxDuration = 30;
 
@@ -18,6 +21,30 @@ const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 export async function POST(req: NextRequest) {
   try {
+    // ── Guard: vyžaduje přihlášení + aktivní předplatné/trial ──────────────
+    const cookieStore = await cookies();
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() { return cookieStore.getAll(); },
+          setAll(cs) { try { cs.forEach(({ name, value, options }) => cookieStore.set(name, value, options)); } catch {} },
+        },
+      }
+    );
+
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const status = await getUserSubscriptionStatus(session.user.id, session.user.created_at);
+    if (!status.isActive) {
+      return NextResponse.json({ error: "Předplatné neaktivní" }, { status: 403 });
+    }
+    // ───────────────────────────────────────────────────────────────────────
+
     const { messages, philosopher = "epiktetos" } = await req.json();
     const systemPrompt = SYSTEM_PROMPTS[philosopher] ?? SYSTEM_PROMPTS.epiktetos;
 
